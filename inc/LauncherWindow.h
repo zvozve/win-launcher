@@ -3,7 +3,7 @@
 #include <QColor>
 #include <QQuickWindow>
 
-#include "core/windoweffects.h"
+#include "WindowEffects.h"
 
 class HotkeyManager;
 
@@ -28,6 +28,8 @@ class LauncherWindow : public QQuickWindow
                    NOTIFY panelWidthRatioChanged)
     Q_PROPERTY(qreal panelHeightRatio READ panelHeightRatio WRITE setPanelHeightRatio
                    NOTIFY panelHeightRatioChanged)
+    Q_PROPERTY(qreal cornerRadius READ cornerRadius WRITE setCornerRadius
+                   NOTIFY cornerRadiusChanged)
 
 public:
     explicit LauncherWindow(QWindow *parent = nullptr);
@@ -42,7 +44,9 @@ public:
     void setPanelWidthRatio(qreal v);
 
     qreal panelHeightRatio() const { return m_heightRatio; }
+    qreal cornerRadius() const { return m_cornerRadius; }
     void setPanelHeightRatio(qreal v);
+    void setCornerRadius(qreal v);
 
     void setHotkeyManager(HotkeyManager *manager) { m_hotkeys = manager; }
 
@@ -56,14 +60,17 @@ signals:
     void darkBackdropChanged();
     void panelWidthRatioChanged();
     void panelHeightRatioChanged();
+    void cornerRadiusChanged();
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     bool event(QEvent *event) override;
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
 private:
     void applyNativeBackdrop();
+    void applyRoundedRegion();
     void moveToScreen(const QScreen *screen);
 
     HotkeyManager *m_hotkeys = nullptr;
@@ -71,5 +78,8 @@ private:
     bool m_darkBackdrop = true;
     qreal m_widthRatio = 0.62;
     qreal m_heightRatio = 0.66;
+    // 圆角半径（逻辑像素）。DWM 自带圆角只有 ~8px 且不可调，和 QML 对不上，
+    // 所以用 SetWindowRgn 按这个值裁窗口区域，让材质和 QML 面板共用同一个形状。
+    qreal m_cornerRadius = 18.0;
     bool m_nativeReady = false;
 };

@@ -1,4 +1,4 @@
-#include "core/iconprovider.h"
+#include "IconProvider.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>

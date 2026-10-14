@@ -1,12 +1,12 @@
-#include "core/launcherwindow.h"
+#include "LauncherWindow.h"
 
 #include <QCursor>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QScreen>
 
-#include "core/hotkeymanager.h"
-#include "core/debugtrace.h"
+#include "HotkeyManager.h"
+#include "DebugTrace.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
@@ -64,6 +64,27 @@ void LauncherWindow::setPanelHeightRatio(qreal v)
     emit panelHeightRatioChanged();
 }
 
+void LauncherWindow::setCornerRadius(qreal v)
+{
+    const qreal clamped = qBound(0.0, v, 40.0);
+    if (qFuzzyCompare(m_cornerRadius, clamped))
+        return;
+    m_cornerRadius = clamped;
+    emit cornerRadiusChanged();
+    if (m_nativeReady)
+        applyRoundedRegion();
+}
+
+void LauncherWindow::applyRoundedRegion()
+{
+    const quintptr id = winId();
+    if (!id)
+        return;
+    const QScreen *scr = screen() ? screen() : QGuiApplication::primaryScreen();
+    const qreal dpr = scr ? scr->devicePixelRatio() : 1.0;
+    WindowEffects::setRoundedRegion(id, m_cornerRadius, dpr);
+}
+
 void LauncherWindow::applyNativeBackdrop()
 {
     wlTrace("  applyNativeBackdrop enter");
@@ -71,12 +92,16 @@ void LauncherWindow::applyNativeBackdrop()
     if (!hwnd)
         return;
 
-    const QColor tint = m_darkBackdrop ? QColor(20, 20, 24, 200) : QColor(248, 248, 250, 200);
+    // 材质自身的染色：alpha 越低越"透"、模糊越明显。QML 侧面板只再叠一层极淡的
+    // 底色 + 描边，避免把模糊盖掉。
+    const QColor tint = m_darkBackdrop ? QColor(22, 22, 26, 150) : QColor(250, 250, 252, 138);
     WindowEffects::applyBackdrop(hwnd, WindowEffects::BackdropTransient, tint);
-    WindowEffects::setRoundedCorners(hwnd, true);
+    // 圆角交给 SetWindowRgn：DWM 自带圆角只有 ~8px，和 QML 的 18px 对不上会露硬边
+    WindowEffects::setRoundedCorners(hwnd, false);
     WindowEffects::setDarkMode(hwnd, m_darkBackdrop);
     WindowEffects::hideFromTaskbar(hwnd);
     WindowEffects::setTopMost(hwnd, true);
+    applyRoundedRegion();
     wlTrace("  applyNativeBackdrop done");
 }
 
@@ -139,7 +164,14 @@ void LauncherWindow::showEvent(QShowEvent *event)
         m_nativeReady = true;
     }
     moveToScreen(nullptr);
+    applyRoundedRegion();
     wlTrace("showEvent done");
+}
+
+void LauncherWindow::resizeEvent(QResizeEvent *event)
+{
+    QQuickWindow::resizeEvent(event);
+    applyRoundedRegion();
 }
 
 bool LauncherWindow::event(QEvent *event)

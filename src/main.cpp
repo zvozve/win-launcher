@@ -1,4 +1,6 @@
 #include <QAction>
+#include <QDir>
+#include <QFile>
 #include <QApplication>
 #include <QIcon>
 #include <QLocalServer>
@@ -9,16 +11,17 @@
 #include <QQuickStyle>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <QUrl>
 
 #include <cstdio>
 #include <QtGlobal>
 
-#include "app/controller.h"
-#include "core/config.h"
-#include "core/debugtrace.h"
-#include "core/everythingsearch.h"
-#include "core/hotkeymanager.h"
-#include "core/launcherwindow.h"
+#include "Controller.h"
+#include "Config.h"
+#include "DebugTrace.h"
+#include "EverythingSearch.h"
+#include "HotkeyManager.h"
+#include "LauncherWindow.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
@@ -63,6 +66,36 @@ QIcon makeAppIcon()
     return QIcon(pm);
 }
 
+// ---- 诊断输出 ----------------------------------------------------------
+// 本程序是 WIN32 子系统（没有控制台），所以 --test-* 类诊断既尝试借用父进程
+// 的控制台，也把结果写到 <exe目录>\winlauncher.diagnostics.txt，保证一定拿得到。
+QString diagnosticsPath()
+{
+    const QString dir = QCoreApplication::instance() ? QCoreApplication::applicationDirPath()
+                                                     : QDir::currentPath();
+    return QDir(dir).filePath(QStringLiteral("winlauncher.diagnostics.txt"));
+}
+
+void attachParentConsole()
+{
+    if (!AttachConsole(ATTACH_PARENT_PROCESS))
+        return;
+    FILE *f = nullptr;
+    freopen_s(&f, "CONOUT$", "w", stdout);
+    freopen_s(&f, "CONOUT$", "w", stderr);
+}
+
+void report(const QString &line)
+{
+    std::fprintf(stdout, "%s\n", qPrintable(line));
+    QFile f(diagnosticsPath());
+    if (f.open(QIODevice::Append | QIODevice::Text)) {
+        f.write(line.toUtf8());
+        f.write("\n");
+        f.close();
+    }
+}
+
 void raiseNotice(QSystemTrayIcon *tray, const QString &title, const QString &body)
 {
     if (tray)
@@ -97,7 +130,7 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("WinLauncher"));
-    app.setApplicationVersion(QStringLiteral("0.1.0"));
+    app.setApplicationVersion(QStringLiteral(APP_VERSION));
     app.setApplicationDisplayName(QStringLiteral("WinLauncher"));
     app.setQuitOnLastWindowClosed(false); // 关掉面板不退出，靠托盘常驻
 
@@ -140,19 +173,22 @@ int main(int argc, char *argv[])
         const int idx = testArgs.indexOf(QStringLiteral("--test-everything"));
         if (idx >= 0) {
             const QString query = (idx + 1 < testArgs.size()) ? testArgs.at(idx + 1) : QString();
-            std::fprintf(stdout, "everything.available  = %s\n",
-                         everything.isAvailable() ? "true" : "false");
-            std::fprintf(stdout, "everything.loadedPath = %s\n",
-                         qPrintable(everything.loadedPath()));
+            attachParentConsole();
+            QFile::remove(diagnosticsPath());
+            report(QStringLiteral("everything.available  = %1")
+                       .arg(everything.isAvailable() ? QStringLiteral("true") : QStringLiteral("false")));
+            report(QStringLiteral("everything.loadedPath = %1").arg(everything.loadedPath()));
+            report(QStringLiteral("searchCategory       = %1").arg(config.searchCategory()));
             if (!query.isEmpty()) {
                 const QStringList hits =
-                    everything.search(query, 20, QStringLiteral("exe;lnk;url"));
-                std::fprintf(stdout, "query=\"%s\"  hits=%d\n", qPrintable(query),
-                             static_cast<int>(hits.size()));
+                    everything.search(query, 20, Config::categoryExtensions(config.searchCategory()));
+                report(QStringLiteral("query=\"%1\"  filter=\"%2\"  hits=%3")
+                           .arg(query, Config::categoryExtensions(config.searchCategory()))
+                           .arg(hits.size()));
                 for (const QString &h : hits)
-                    std::fprintf(stdout, "  %s\n", qPrintable(h));
+                    report(QStringLiteral("  ") + h);
             }
-            std::fflush(stdout);
+            report(QStringLiteral("report file: ") + diagnosticsPath());
             return 0;
         }
     }
@@ -166,7 +202,7 @@ int main(int argc, char *argv[])
     wlTrace("qml types registered");
 
     QQmlApplicationEngine engine;
-    engine.loadFromModule("WinLauncher", "Main");
+    engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
     wlTrace("qml loaded");
     if (engine.rootObjects().isEmpty()) {
         qCritical("QML 加载失败，程序退出");
@@ -197,6 +233,7 @@ int main(int argc, char *argv[])
     QMenu trayMenu;
     QAction *actShow = trayMenu.addAction(QStringLiteral("打开启动台"));
     QAction *actEdit = trayMenu.addAction(QStringLiteral("编辑图标…"));
+    QAction *actSettings = trayMenu.addAction(QStringLiteral("设置…"));
     trayMenu.addSeparator();
     QAction *actAutoStart = trayMenu.addAction(QStringLiteral("开机自启"));
     actAutoStart->setCheckable(true);
@@ -208,6 +245,8 @@ int main(int argc, char *argv[])
 
     QObject::connect(actShow, &QAction::triggered, &controller, &Controller::togglePanel);
     QObject::connect(actEdit, &QAction::triggered, &controller, &Controller::editRequested);
+    QObject::connect(actSettings, &QAction::triggered, &controller,
+                     &Controller::settingsRequested);
     QObject::connect(actRescan, &QAction::triggered, &controller, &Controller::rescan);
     QObject::connect(actConfig, &QAction::triggered, &controller, &Controller::openConfigFolder);
     QObject::connect(actQuit, &QAction::triggered, &controller, &Controller::requestQuit);

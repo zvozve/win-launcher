@@ -11,11 +11,16 @@ Item {
 
     signal launchRequested(var item)
     signal editRequested()
+    signal settingsRequested()
     signal closeRequested()
 
     readonly property bool dark: AppConfig.darkMode
     readonly property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
     readonly property color subTextColor: dark ? "#9A9AA0" : "#6E6E73"
+
+    readonly property int categoryIndex: Math.max(0, Ctrl.searchCategoryKeys.indexOf(
+                                                      AppConfig.searchCategory))
+    readonly property string categoryLabel: Ctrl.searchCategoryLabels[categoryIndex]
 
     function focusSearch() {
         searchBar.focusInput()
@@ -28,16 +33,16 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: 20
-        anchors.rightMargin: 20
-        anchors.topMargin: 16
-        anchors.bottomMargin: 12
-        spacing: 12
+        anchors.leftMargin: 18
+        anchors.rightMargin: 18
+        anchors.topMargin: 14
+        anchors.bottomMargin: 10
+        spacing: 10
 
         // ---- 顶部：搜索栏 + 操作 ----
         RowLayout {
             Layout.fillWidth: true
-            spacing: 10
+            spacing: 8
 
             SearchBar {
                 id: searchBar
@@ -60,6 +65,13 @@ Item {
             }
 
             PillButton {
+                text: qsTr("设置")
+                dark: root.dark
+                textColor: root.textColor
+                onClicked: root.settingsRequested()
+            }
+
+            PillButton {
                 text: qsTr("关闭")
                 dark: root.dark
                 textColor: root.textColor
@@ -75,8 +87,8 @@ Item {
 
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            cellWidth: Math.max(64, Math.floor(width / Math.max(1, AppConfig.gridColumns)))
-            cellHeight: cellWidth + 26
+            cellWidth: Math.max(56, Math.floor(width / Math.max(1, AppConfig.gridColumns)))
+            cellHeight: Math.round(cellWidth * 0.82)
 
             model: Ctrl.visibleApps
 
@@ -102,19 +114,21 @@ Item {
                 text: Ctrl.scanning
                       ? qsTr("正在扫描已安装应用…")
                       : (Ctrl.query.length > 0
-                         ? qsTr("没有匹配「%1」的应用").arg(Ctrl.query)
-                         : qsTr("没有可显示的应用"))
+                         ? qsTr("没有匹配「%1」的%2").arg(Ctrl.query).arg(root.categoryLabel)
+                         : (AppConfig.searchSource === "everything"
+                            ? qsTr("输入关键词后从全盘搜索%1").arg(root.categoryLabel)
+                            : qsTr("没有可显示的%1，试试切到「全盘」").arg(root.categoryLabel)))
             }
         }
 
-        // ---- Everything 全盘搜索结果（可选） ----
+        // ---- Everything 全盘搜索结果 ----
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 4
             visible: Ctrl.searchResults.length > 0
 
             Text {
-                text: qsTr("全盘搜索（Everything）")
+                text: qsTr("全盘搜索（Everything）· %1").arg(root.categoryLabel)
                 color: root.subTextColor
                 font.pixelSize: 11
             }
@@ -132,7 +146,7 @@ Item {
                     height: 46
                     radius: 10
                     color: hitArea.containsMouse
-                           ? (root.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.07))
+                           ? (root.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.08))
                            : "transparent"
 
                     Image {
@@ -155,7 +169,7 @@ Item {
 
                     ToolTip.visible: hitArea.containsMouse
                     ToolTip.text: modelData ? modelData.target : ""
-                    ToolTip.delay: 600
+                    ToolTip.delay: 500
                 }
             }
         }

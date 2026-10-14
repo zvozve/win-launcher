@@ -1,6 +1,9 @@
-#include "core/windoweffects.h"
+#include "WindowEffects.h"
 
+#include <QDebug>
 #include <QOperatingSystemVersion>
+
+#include "DebugTrace.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
@@ -75,10 +78,17 @@ SetWindowCompositionAttributeFn resolveSetWindowCompositionAttribute()
     return fn;
 }
 
-// QColor -> Win10 丙烯酸需要的 ABGR 整数
+// QColor -> 丙烯酸需要的 ABGR 整数
 int colorToAbgr(const QColor &c)
 {
     return static_cast<int>((c.alpha() << 24) | (c.blue() << 16) | (c.green() << 8) | c.red());
+}
+
+// 把整块客户区都算进"DWM 玻璃"，否则无边框窗口上模糊只覆盖一部分
+void extendFrameIntoClientArea(HWND h)
+{
+    MARGINS margins{-1, -1, -1, -1};
+    DwmExtendFrameIntoClientArea(h, &margins);
 }
 
 } // namespace
@@ -96,27 +106,30 @@ void applyBackdrop(quintptr hwnd, Backdrop mode, const QColor &tint)
         return;
     HWND h = reinterpret_cast<HWND>(hwnd);
 
-    if (isWindows11OrGreater() && mode != BackdropAcrylic) {
-        SystemBackdropType type = kBackdropTransient;
-        if (mode == BackdropMica)
-            type = kBackdropMica;
-        else if (mode == BackdropMicaAlt)
-            type = kBackdropTabbed;
-        else if (mode == BackdropNone)
-            type = kBackdropNone;
-
+    if (mode == BackdropMica || mode == BackdropMicaAlt) {
+        // DWM 系统材质只对「不透明客户区」的常规窗口可靠，Mica 系列才走这条
+        const SystemBackdropType type =
+            (mode == BackdropMica) ? kBackdropMica : kBackdropTabbed;
         const BOOL dark = tint.lightness() < 128 ? TRUE : FALSE;
         DwmSetWindowAttribute(h, kDwmwaUseImmersiveDarkMode, &dark, sizeof(dark));
-        DwmSetWindowAttribute(h, kDwmwaSystemBackdropType, &type, sizeof(type));
+        const HRESULT hr = DwmSetWindowAttribute(h, kDwmwaSystemBackdropType, &type, sizeof(type));
+        wlTrace(QStringLiteral("  backdrop: DWMSBT hr=0x%1")
+                    .arg(static_cast<quint32>(hr), 8, 16, QLatin1Char('0')));
         return;
     }
 
+    // 无边框 + 逐像素透明的窗口：丙烯酸走 SetWindowCompositionAttribute 最稳
     SetWindowCompositionAttributeFn setAttr = resolveSetWindowCompositionAttribute();
-    if (!setAttr)
+    if (!setAttr) {
+        wlTrace("  backdrop: SetWindowCompositionAttribute 不可用，退回纯半透明");
         return;
+    }
+
+    extendFrameIntoClientArea(h);
 
     AccentPolicy policy{};
-    policy.accentState = (mode == BackdropNone) ? kAccentDisabled : kAccentEnableAcrylicBlurBehind;
+    policy.accentState =
+        (mode == BackdropNone) ? kAccentDisabled : kAccentEnableAcrylicBlurBehind;
     policy.accentFlags = 2;
     policy.gradientColor = colorToAbgr(tint);
 
@@ -124,7 +137,12 @@ void applyBackdrop(quintptr hwnd, Backdrop mode, const QColor &tint)
     data.attribute = kWcaAccentPolicy;
     data.data = &policy;
     data.dataSize = sizeof(policy);
-    setAttr(h, &data);
+
+    const BOOL ok = setAttr(h, &data);
+    wlTrace(QStringLiteral("  backdrop: acrylic state=%1 abgr=%2 ok=%3")
+                .arg(policy.accentState)
+                .arg(static_cast<quint32>(colorToAbgr(tint)), 8, 16, QLatin1Char('0'))
+                .arg(ok ? 1 : 0));
 }
 
 void setRoundedCorners(quintptr hwnd, bool rounded)
@@ -132,8 +150,41 @@ void setRoundedCorners(quintptr hwnd, bool rounded)
     if (!hwnd || !isWindows11OrGreater())
         return;
     const WindowCornerPreference pref = rounded ? kCornerRound : kCornerDoNotRound;
-    DwmSetWindowAttribute(reinterpret_cast<HWND>(hwnd), kDwmwaWindowCornerPreference,
-                          &pref, sizeof(pref));
+    DwmSetWindowAttribute(reinterpret_cast<HWND>(hwnd), kDwmwaWindowCornerPreference, &pref,
+                          sizeof(pref));
+}
+
+void setRoundedRegion(quintptr hwnd, qreal radiusPx, qreal dpr)
+{
+    if (!hwnd)
+        return;
+    HWND h = reinterpret_cast<HWND>(hwnd);
+
+    RECT rc{};
+    if (!GetWindowRect(h, &rc))
+        return;
+    const int w = rc.right - rc.left;
+    const int hgt = rc.bottom - rc.top;
+    if (w <= 0 || hgt <= 0)
+        return;
+
+    const qreal scale = dpr > 0.0 ? dpr : 1.0;
+    const int diameter = qMax(2, qRound(radiusPx * 2.0 * scale));
+    HRGN region = CreateRoundRectRgn(0, 0, w + 1, hgt + 1, diameter, diameter);
+    if (!region)
+        return;
+
+    // 成功后 region 归系统所有，不能再 DeleteObject
+    if (!SetWindowRgn(h, region, TRUE)) {
+        DeleteObject(region);
+        wlTrace("  region: SetWindowRgn FAILED");
+        return;
+    }
+    wlTrace(QStringLiteral("  region: %1x%2 r=%3px dpr=%4")
+                .arg(w)
+                .arg(hgt)
+                .arg(radiusPx)
+                .arg(scale));
 }
 
 void setDarkMode(quintptr hwnd, bool dark)
@@ -141,8 +192,8 @@ void setDarkMode(quintptr hwnd, bool dark)
     if (!hwnd)
         return;
     const BOOL value = dark ? TRUE : FALSE;
-    DwmSetWindowAttribute(reinterpret_cast<HWND>(hwnd), kDwmwaUseImmersiveDarkMode,
-                          &value, sizeof(value));
+    DwmSetWindowAttribute(reinterpret_cast<HWND>(hwnd), kDwmwaUseImmersiveDarkMode, &value,
+                          sizeof(value));
 }
 
 void hideFromTaskbar(quintptr hwnd)

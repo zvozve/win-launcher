@@ -1,4 +1,4 @@
-#include "core/everythingsearch.h"
+#include "EverythingSearch.h"
 
 #include <QCoreApplication>
 #include <QDebug>

@@ -1,9 +1,9 @@
-#include "core/launcher.h"
+#include "Launcher.h"
 
 #include <QProcess>
 #include <QUrl>
 
-#include "core/appitem.h"
+#include "AppItem.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN

@@ -1,4 +1,4 @@
-#include "core/debugtrace.h"
+#include "DebugTrace.h"
 
 #include <QCoreApplication>
 #include <QDir>

@@ -4,6 +4,7 @@
   "cmake.generator": "Ninja",
   "cmake.cmakePath": "C:/Container/System/Library/QT/Tools/CMake_64/bin/cmake.exe",
   "cmake.sourceDirectory": "${workspaceFolder}",
+  // 布局：build/Debug、build/Release（与 build.bat 一致）
   // Ninja 是单配置生成器：每个配置一个目录，正好对齐 scripts/build.bat 的产物布局
   "cmake.buildDirectory": "${workspaceFolder}/build/${buildType}",
   "cmake.configureSettings": {

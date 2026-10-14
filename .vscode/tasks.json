@@ -4,7 +4,7 @@
     {
       "label": "build: Debug",
       "type": "shell",
-      "command": "${workspaceFolder}/scripts/build.bat",
+      "command": "${workspaceFolder}/build.bat",
       "args": ["Debug"],
       "problemMatcher": ["$msCompile"],
       "group": {
@@ -15,7 +15,7 @@
     {
       "label": "build: Release",
       "type": "shell",
-      "command": "${workspaceFolder}/scripts/build.bat",
+      "command": "${workspaceFolder}/build.bat",
       "args": ["Release"],
       "problemMatcher": ["$msCompile"],
       "group": "build"
@@ -23,8 +23,8 @@
     {
       "label": "run: Debug",
       "type": "shell",
-      "command": "${workspaceFolder}/scripts/run.bat",
-      "args": ["Debug", "--trace"],
+      "command": "${workspaceFolder}/build/Debug/WinLauncher.exe",
+      "args": ["--trace"],
       "dependsOn": "build: Debug",
       "problemMatcher": []
     },

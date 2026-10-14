@@ -23,6 +23,8 @@ class Config : public QObject
     Q_PROPERTY(bool followSystemTheme READ followSystemTheme WRITE setFollowSystemTheme
                    NOTIFY followSystemThemeChanged)
     Q_PROPERTY(int gridColumns READ gridColumns WRITE setGridColumns NOTIFY gridColumnsChanged)
+    Q_PROPERTY(QString searchCategory READ searchCategory WRITE setSearchCategory
+                   NOTIFY searchCategoryChanged)
     Q_PROPERTY(QString configPath READ configPath CONSTANT)
 
 public:
@@ -38,6 +40,7 @@ public:
     bool darkMode() const { return m_darkMode; }
     bool followSystemTheme() const { return m_followSystemTheme; }
     int gridColumns() const { return m_gridColumns; }
+    QString searchCategory() const { return m_searchCategory; }
     QString configPath() const;
 
     void setHotkey(const QString &v);
@@ -48,6 +51,15 @@ public:
     void setDarkMode(bool v);
     void setFollowSystemTheme(bool v);
     void setGridColumns(int v);
+    void setSearchCategory(const QString &v);
+
+    // ---- 搜索类型（本地过滤 + Everything 的 ext: 过滤共用同一张表）----
+    // key: app / doc / image / video / audio / archive / all
+    static QStringList categoryKeys();
+    static QStringList categoryLabels();
+    static QString categoryLabel(const QString &key);
+    // 分号分隔的扩展名；返回空串表示不按类型过滤（all）
+    static QString categoryExtensions(const QString &key);
 
     // 读注册表判断系统是否深色（AppsUseLightTheme == 0）
     static bool systemUsesDarkMode();
@@ -66,6 +78,7 @@ signals:
     void darkModeChanged();
     void followSystemThemeChanged();
     void gridColumnsChanged();
+    void searchCategoryChanged();
 
 private:
     void syncDarkMode();
@@ -77,5 +90,6 @@ private:
     QString m_searchSource = QStringLiteral("local");
     bool m_darkMode = false;
     bool m_followSystemTheme = true;
-    int m_gridColumns = 7;
+    int m_gridColumns = 9;
+    QString m_searchCategory = QStringLiteral("app");
 };

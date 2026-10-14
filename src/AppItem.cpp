@@ -1,4 +1,4 @@
-#include "core/appitem.h"
+#include "AppItem.h"
 
 #include <QCryptographicHash>
 #include <QDir>

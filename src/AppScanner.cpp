@@ -1,4 +1,4 @@
-#include "core/appscanner.h"
+#include "AppScanner.h"
 
 #include <QDir>
 #include <QDirIterator>
@@ -6,10 +6,10 @@
 #include <QSet>
 #include <QSettings>
 
-#include "core/appitem.h"
-#include "core/debugtrace.h"
-#include "core/iconprovider.h"
-#include "core/shortcutresolver.h"
+#include "AppItem.h"
+#include "DebugTrace.h"
+#include "IconProvider.h"
+#include "ShortcutResolver.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN

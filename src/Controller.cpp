@@ -1,4 +1,4 @@
-#include "app/controller.h"
+#include "Controller.h"
 
 #include <QCoreApplication>
 #include <QDesktopServices>
@@ -15,12 +15,12 @@
 
 #include <utility>
 
-#include "core/appitem.h"
-#include "core/debugtrace.h"
-#include "core/hotkeymanager.h"
-#include "core/iconprovider.h"
-#include "core/launcher.h"
-#include "core/launcherwindow.h"
+#include "AppItem.h"
+#include "DebugTrace.h"
+#include "HotkeyManager.h"
+#include "IconProvider.h"
+#include "Launcher.h"
+#include "LauncherWindow.h"
 
 namespace {
 
@@ -215,22 +215,28 @@ void Controller::rebuildVisible()
     const bool appsListChanged = (merged.size() != m_apps.size());
     m_apps = merged;
 
-    // 2) 过滤
+    // 2) 过滤：先按「搜索类型」，再按关键词
+    //    "app" 这一档不加扩展名限制（扫进来的本来就是程序，手动条目也想留着）
+    const QString category = m_config->searchCategory();
+    const QStringList exts =
+        Config::categoryExtensions(category).split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    const QSet<QString> allowed(exts.begin(), exts.end());
+    const bool typeFiltered = !allowed.isEmpty() && category != QLatin1String("app");
+
     const QString needle = m_query.trimmed();
     QList<QObject *> filtered;
-    if (needle.isEmpty()) {
-        filtered = m_apps;
-    } else {
-        filtered.reserve(m_apps.size());
-        for (QObject *obj : std::as_const(m_apps)) {
-            auto *item = qobject_cast<AppItem *>(obj);
-            if (!item)
-                continue;
-            if (item->name().contains(needle, Qt::CaseInsensitive)
-                || item->target().contains(needle, Qt::CaseInsensitive)) {
-                filtered.append(obj);
-            }
+    filtered.reserve(m_apps.size());
+    for (QObject *obj : std::as_const(m_apps)) {
+        auto *item = qobject_cast<AppItem *>(obj);
+        if (!item)
+            continue;
+        if (typeFiltered && !allowed.contains(QFileInfo(item->target()).suffix().toLower()))
+            continue;
+        if (!needle.isEmpty() && !item->name().contains(needle, Qt::CaseInsensitive)
+            && !item->target().contains(needle, Qt::CaseInsensitive)) {
+            continue;
         }
+        filtered.append(obj);
     }
     m_visible = filtered;
 
@@ -239,18 +245,17 @@ void Controller::rebuildVisible()
     QList<QObject *> extra;
     if (!needle.isEmpty() && m_config->searchSource() == QLatin1String("everything")
         && m_everything && m_everything->isAvailable()) {
-        // 只让索引返回可启动类型；具体类型集后续做成可选项（见 doc/2.方案设计.md F8）
+        // 类型集来自搜索栏最左侧那个选择器（Config::categoryExtensions）
         const QStringList hits =
-            m_everything->search(needle, 60, QStringLiteral("exe;lnk;url;bat;cmd"));
+            m_everything->search(needle, 60, Config::categoryExtensions(category));
         QSet<QString> known;
         for (QObject *obj : std::as_const(m_apps)) {
             if (auto *item = qobject_cast<AppItem *>(obj))
                 known.insert(QFileInfo(item->target()).absoluteFilePath().toLower());
         }
         for (const QString &hit : hits) {
-            const QString lower = hit.toLower();
-            if (!lower.endsWith(QLatin1String(".exe")) && !lower.endsWith(QLatin1String(".lnk")))
-                continue; // 只取可启动类型
+            if (!allowed.isEmpty() && !allowed.contains(QFileInfo(hit).suffix().toLower()))
+                continue; // 兜一道：只留当前搜索类型允许的扩展名
             if (known.contains(QFileInfo(hit).absoluteFilePath().toLower()))
                 continue;
             AppItem *item = AppScanner::fromAnyPath(hit, this);

@@ -1,4 +1,4 @@
-#include "core/shortcutresolver.h"
+#include "ShortcutResolver.h"
 
 #include <QDir>
 #include <QFileInfo>

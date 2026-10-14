@@ -1,4 +1,4 @@
-#include "core/hotkeymanager.h"
+#include "HotkeyManager.h"
 
 #include <QKeySequence>
 

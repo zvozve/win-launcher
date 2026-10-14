@@ -1,9 +1,17 @@
 @echo off
-rem Download the Everything SDK and extract dll\Everything64.dll into
-rem third_party\everything\ so that scripts\build.bat can copy it next to
-rem the executable and WinLauncher's "全盘" search source can work.
-rem
-rem Uses only tools shipped with Windows 10+: curl.exe and tar.exe (bsdtar).
+REM =====================================================================
+REM  fetch-everything-sdk.bat - get Everything64.dll for the full-disk search
+REM
+REM  The Everything installer does NOT ship the SDK DLL; it only comes with
+REM  the separate Everything SDK download. This script pulls
+REM  https://www.voidtools.com/Everything-SDK.zip and extracts
+REM  dll\Everything64.dll into third_party\everything\, from where
+REM  packaging\deploy.bat copies it next to the exe.
+REM
+REM  The DLL itself is git-ignored (binary, reproducible from this script).
+REM
+REM  Only uses tools shipped with Windows 10 1803+: curl.exe and tar.exe.
+REM =====================================================================
 setlocal EnableExtensions
 
 set "DEST=%~dp0..\third_party\everything"
@@ -34,23 +42,23 @@ rmdir /s /q "%TMPD%" >nul 2>nul
 del "%ZIP%" >nul 2>nul
 
 echo [sdk] ok: %DEST%\Everything64.dll
-echo [sdk] next: scripts\build.bat Debug   (它会自动拷到 build\Debug\)
+echo [sdk] next: build.bat   (it runs windeployqt and copies this DLL)
 endlocal
 exit /b 0
 
 :no_curl
-echo [sdk] curl.exe not found (需要 Windows 10 1803+ 自带的 curl)
+echo [sdk] curl.exe not found (needs Windows 10 1803+)
 endlocal
 exit /b 1
 
 :no_tar
-echo [sdk] tar.exe not found (需要 Windows 10 1803+ 自带的 bsdtar)
+echo [sdk] tar.exe not found (needs Windows 10 1803+)
 endlocal
 exit /b 1
 
 :dl_fail
 echo [sdk] download failed: %URL%
-echo [sdk] 可手动下载 Everything-SDK.zip 并解出 dll\Everything64.dll 放到 %DEST%
+echo [sdk] download Everything-SDK.zip manually and put dll\Everything64.dll in %DEST%
 endlocal
 exit /b 1
 

@@ -1,0 +1,18 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <!-- QML 文件统一放 /qml/ 下, 引擎用 qrc:/qml/Main.qml 加载 -->
+        <file alias="qml/AppTile.qml">../ui/AppTile.qml</file>
+        <file alias="qml/CategorySelector.qml">../ui/CategorySelector.qml</file>
+        <file alias="qml/EditWindow.qml">../ui/EditWindow.qml</file>
+        <file alias="qml/GlassPanel.qml">../ui/GlassPanel.qml</file>
+        <file alias="qml/HotkeyRecorder.qml">../ui/HotkeyRecorder.qml</file>
+        <file alias="qml/LauncherPanel.qml">../ui/LauncherPanel.qml</file>
+        <file alias="qml/Main.qml">../ui/Main.qml</file>
+        <file alias="qml/PillButton.qml">../ui/PillButton.qml</file>
+        <file alias="qml/SearchBar.qml">../ui/SearchBar.qml</file>
+        <file alias="qml/SectionTitle.qml">../ui/SectionTitle.qml</file>
+        <file alias="qml/SettingRow.qml">../ui/SettingRow.qml</file>
+        <file alias="qml/SettingsWindow.qml">../ui/SettingsWindow.qml</file>
+    </qresource>
+</RCC>

@@ -1,14 +1,15 @@
-#include "core/config.h"
+#include "Config.h"
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonDocument>
 #include <QSettings>
 #include <QStandardPaths>
 
-#include "core/hotkeymanager.h"
+#include "HotkeyManager.h"
 
 namespace {
 
@@ -55,7 +56,8 @@ void Config::load()
     m_searchSource = o.value(QStringLiteral("searchSource")).toString(QStringLiteral("local"));
     m_followSystemTheme = o.value(QStringLiteral("followSystemTheme")).toBool(true);
     m_darkMode = o.value(QStringLiteral("darkMode")).toBool(false);
-    m_gridColumns = o.value(QStringLiteral("gridColumns")).toInt(7);
+    m_gridColumns = o.value(QStringLiteral("gridColumns")).toInt(9);
+    m_searchCategory = o.value(QStringLiteral("searchCategory")).toString(QStringLiteral("app"));
 
     // 以注册表为准，避免用户手工改动后配置与系统不一致
     m_autostart = isAutostartEnabled();
@@ -74,6 +76,7 @@ QJsonObject Config::toJson() const
     o.insert(QStringLiteral("followSystemTheme"), m_followSystemTheme);
     o.insert(QStringLiteral("darkMode"), m_darkMode);
     o.insert(QStringLiteral("gridColumns"), m_gridColumns);
+    o.insert(QStringLiteral("searchCategory"), m_searchCategory);
     return o;
 }
 
@@ -193,6 +196,57 @@ void Config::setFollowSystemTheme(bool v)
     emit followSystemThemeChanged();
     syncDarkMode();
     save();
+}
+
+void Config::setSearchCategory(const QString &v)
+{
+    if (m_searchCategory == v)
+        return;
+    m_searchCategory = v;
+    emit searchCategoryChanged();
+    save();
+}
+
+QStringList Config::categoryKeys()
+{
+    return {QStringLiteral("app"),     QStringLiteral("doc"),  QStringLiteral("image"),
+            QStringLiteral("video"),   QStringLiteral("audio"), QStringLiteral("archive"),
+            QStringLiteral("all")};
+}
+
+QStringList Config::categoryLabels()
+{
+    return {QStringLiteral("应用"), QStringLiteral("文档"), QStringLiteral("图片"),
+            QStringLiteral("视频"), QStringLiteral("音乐"), QStringLiteral("压缩包"),
+            QStringLiteral("全部")};
+}
+
+QString Config::categoryLabel(const QString &key)
+{
+    const QStringList keys = categoryKeys();
+    const QStringList labels = categoryLabels();
+    const int idx = keys.indexOf(key);
+    return idx >= 0 ? labels.at(idx) : labels.first();
+}
+
+QString Config::categoryExtensions(const QString &key)
+{
+    static const QHash<QString, QString> table = {
+        {QStringLiteral("app"),
+         QStringLiteral("exe;lnk;url;bat;cmd;com;msc")},
+        {QStringLiteral("doc"),
+         QStringLiteral("txt;md;log;pdf;doc;docx;xls;xlsx;ppt;pptx;csv;json;xml;yaml;yml;ini")},
+        {QStringLiteral("image"),
+         QStringLiteral("jpg;jpeg;png;gif;bmp;webp;svg;ico;tif;tiff;heic;avif;psd")},
+        {QStringLiteral("video"),
+         QStringLiteral("mp4;mkv;avi;mov;wmv;flv;webm;m4v;mpg;mpeg;ts;rmvb;3gp")},
+        {QStringLiteral("audio"),
+         QStringLiteral("mp3;flac;wav;aac;m4a;ogg;oga;wma;ape;opus;mid")},
+        {QStringLiteral("archive"),
+         QStringLiteral("zip;rar;7z;tar;gz;bz2;xz;zst;iso;cab;lz4;tgz")},
+        {QStringLiteral("all"), QString()},
+    };
+    return table.value(key);
 }
 
 void Config::setGridColumns(int v)

@@ -5,11 +5,11 @@
 #include <QString>
 #include <QUrl>
 
-#include "core/appscanner.h"
+#include "AppScanner.h"
 
 // 属性里用到 Config* / EverythingSearch*，元类型要求类型完整，不能只前置声明
-#include "core/config.h"
-#include "core/everythingsearch.h"
+#include "Config.h"
+#include "EverythingSearch.h"
 
 class AppItem;
 class HotkeyManager;
@@ -44,6 +44,8 @@ class Controller : public QObject
     Q_PROPERTY(QString errorText READ errorText NOTIFY errorTextChanged)
     Q_PROPERTY(Config *config READ config CONSTANT)
     Q_PROPERTY(EverythingSearch *everything READ everything CONSTANT)
+    Q_PROPERTY(QStringList searchCategoryLabels READ searchCategoryLabels CONSTANT)
+    Q_PROPERTY(QStringList searchCategoryKeys READ searchCategoryKeys CONSTANT)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
     Q_PROPERTY(bool autoStartLaunch READ autoStartLaunch CONSTANT)
 
@@ -81,6 +83,8 @@ public:
     QString errorText() const { return m_error; }
     Config *config() const { return m_config; }
     EverythingSearch *everything() const { return m_everything; }
+    QStringList searchCategoryLabels() const { return Config::categoryLabels(); }
+    QStringList searchCategoryKeys() const { return Config::categoryKeys(); }
     static QString appVersion();
     bool autoStartLaunch() const;
 
@@ -100,6 +104,7 @@ signals:
     // 给 QML 的「外部触发」信号（托盘 / 热键）
     void showPanelRequested();
     void editRequested();
+    void settingsRequested();
 
 public slots:
     void togglePanel();
