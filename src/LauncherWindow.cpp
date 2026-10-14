@@ -5,8 +5,8 @@
 #include <QKeyEvent>
 #include <QScreen>
 
-#include "HotkeyManager.h"
 #include "DebugTrace.h"
+#include "HotkeyManager.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
@@ -26,7 +26,7 @@ LauncherWindow::LauncherWindow(QWindow *parent)
     : QQuickWindow(parent)
 {
     setFlags(Qt::Window | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
-    setColor(Qt::transparent); // 必须透明，否则原生毛玻璃被盖住
+    setColor(Qt::transparent); // 必须透明：玻璃 / 圆角 / 阴影都在 QML 里画
     setTitle(QStringLiteral("WinLauncher"));
 }
 
@@ -44,8 +44,8 @@ void LauncherWindow::setDarkBackdrop(bool v)
         return;
     m_darkBackdrop = v;
     emit darkBackdropChanged();
-    if (m_nativeReady)
-        applyNativeBackdrop();
+    if (m_chromeReady)
+        applyWindowChrome();
 }
 
 void LauncherWindow::setPanelWidthRatio(qreal v)
@@ -66,43 +66,26 @@ void LauncherWindow::setPanelHeightRatio(qreal v)
 
 void LauncherWindow::setCornerRadius(qreal v)
 {
-    const qreal clamped = qBound(0.0, v, 40.0);
+    const qreal clamped = qBound(0.0, v, 48.0);
     if (qFuzzyCompare(m_cornerRadius, clamped))
         return;
     m_cornerRadius = clamped;
     emit cornerRadiusChanged();
-    if (m_nativeReady)
-        applyRoundedRegion();
 }
 
-void LauncherWindow::applyRoundedRegion()
+void LauncherWindow::applyWindowChrome()
 {
-    const quintptr id = winId();
-    if (!id)
-        return;
-    const QScreen *scr = screen() ? screen() : QGuiApplication::primaryScreen();
-    const qreal dpr = scr ? scr->devicePixelRatio() : 1.0;
-    WindowEffects::setRoundedRegion(id, m_cornerRadius, dpr);
-}
-
-void LauncherWindow::applyNativeBackdrop()
-{
-    wlTrace("  applyNativeBackdrop enter");
     const quintptr hwnd = winId();
     if (!hwnd)
         return;
 
-    // 材质自身的染色：alpha 越低越"透"、模糊越明显。QML 侧面板只再叠一层极淡的
-    // 底色 + 描边，避免把模糊盖掉。
-    const QColor tint = m_darkBackdrop ? QColor(22, 22, 26, 150) : QColor(250, 250, 252, 138);
-    WindowEffects::applyBackdrop(hwnd, WindowEffects::BackdropTransient, tint);
-    // 圆角交给 SetWindowRgn：DWM 自带圆角只有 ~8px，和 QML 的 18px 对不上会露硬边
-    WindowEffects::setRoundedCorners(hwnd, false);
-    WindowEffects::setDarkMode(hwnd, m_darkBackdrop);
+    // 不再应用任何系统材质：玻璃底图是 QML 里的一张模糊截图。
+    // 这里只处理「虚拟窗口属性」——不进任务栏、始终置顶、深色标题栏。
     WindowEffects::hideFromTaskbar(hwnd);
     WindowEffects::setTopMost(hwnd, true);
-    applyRoundedRegion();
-    wlTrace("  applyNativeBackdrop done");
+    WindowEffects::setDarkMode(hwnd, m_darkBackdrop);
+    // DWM 自带圆角要关掉：窗口四周要留出画阴影的空间，形状由 QML 决定
+    WindowEffects::setRoundedCorners(hwnd, false);
 }
 
 void LauncherWindow::moveToScreen(const QScreen *screen)
@@ -117,8 +100,14 @@ void LauncherWindow::moveToScreen(const QScreen *screen)
 
     const QRect avail = target->availableGeometry();
 
-    const int w = qBound(kMinPanelWidth, static_cast<int>(avail.width() * m_widthRatio), kMaxPanelWidth);
-    const int h = qBound(kMinPanelHeight, static_cast<int>(avail.height() * m_heightRatio), kMaxPanelHeight);
+    const int panelW =
+        qBound(kMinPanelWidth, static_cast<int>(avail.width() * m_widthRatio), kMaxPanelWidth);
+    const int panelH =
+        qBound(kMinPanelHeight, static_cast<int>(avail.height() * m_heightRatio), kMaxPanelHeight);
+
+    // 窗口 = 面板 + 四周阴影边距；居中时按窗口算，面板自然也是居中的
+    const int w = panelW + 2 * kShadowMargin;
+    const int h = panelH + 2 * kShadowMargin;
 
     // 略微上移，视觉上更接近 macOS 的「浮在中间偏上」
     const int x = avail.x() + (avail.width() - w) / 2;
@@ -126,16 +115,44 @@ void LauncherWindow::moveToScreen(const QScreen *screen)
 
     resize(w, h);
     setPosition(x, y);
+
+    m_panelRect = QRect(x + kShadowMargin, y + kShadowMargin, panelW, panelH);
 }
 
 void LauncherWindow::showAtCursor()
 {
-    wlTrace("showAtCursor enter");
+    // 顺序很重要：先摆好位置（此刻窗口还是隐藏的）→ 抓屏 → 才 show()。
+    // 抓屏必须发生在窗口出现在屏幕上之前，否则会把自己的上一帧抓进底图。
     moveToScreen(nullptr);
+
+    // 抓屏区域用 Win32 的物理矩形，而不是把 Qt 的逻辑坐标乘 dpr：
+    // 多屏不同 DPR 时两者不是简单的比例关系（每个屏的物理原点 Qt 没有暴露），
+    // 在副屏上会算出一个越界的区域，抓屏直接失败。
+    // 未 show() 时调 winId() 只是先把原生窗口建出来，不会显示，是安全的。
+    const quintptr hwnd = winId();
+    RECT rc{};
+    if (hwnd && GetWindowRect(reinterpret_cast<HWND>(hwnd), &rc) && rc.right > rc.left
+        && rc.bottom > rc.top) {
+        const QRect physical(rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top);
+        const QScreen *scr = screen() ? screen() : QGuiApplication::primaryScreen();
+        const qreal dpr = scr ? scr->devicePixelRatio() : 1.0;
+        emit backdropRequested(physical, m_cornerRadius, dpr);
+    } else {
+        wlTrace("showAtCursor: GetWindowRect 失败，跳过底图（走纯色兜底）");
+    }
+
     show();
     raise();
     requestActivate();
-    wlTrace("showAtCursor done");
+
+    wlTrace(QStringLiteral("showAtCursor: panel=(%1,%2 %3x%4) window=%5x%6 r=%7")
+                .arg(m_panelRect.x())
+                .arg(m_panelRect.y())
+                .arg(m_panelRect.width())
+                .arg(m_panelRect.height())
+                .arg(width())
+                .arg(height())
+                .arg(m_cornerRadius));
 }
 
 void LauncherWindow::toggleAtCursor()
@@ -156,22 +173,11 @@ void LauncherWindow::hidePanel()
 
 void LauncherWindow::showEvent(QShowEvent *event)
 {
-    wlTrace("showEvent enter");
     QQuickWindow::showEvent(event);
-
-    if (!m_nativeReady) {
-        applyNativeBackdrop();
-        m_nativeReady = true;
+    if (!m_chromeReady) {
+        applyWindowChrome();
+        m_chromeReady = true;
     }
-    moveToScreen(nullptr);
-    applyRoundedRegion();
-    wlTrace("showEvent done");
-}
-
-void LauncherWindow::resizeEvent(QResizeEvent *event)
-{
-    QQuickWindow::resizeEvent(event);
-    applyRoundedRegion();
 }
 
 bool LauncherWindow::event(QEvent *event)

@@ -56,7 +56,7 @@ void Config::load()
     m_searchSource = o.value(QStringLiteral("searchSource")).toString(QStringLiteral("local"));
     m_followSystemTheme = o.value(QStringLiteral("followSystemTheme")).toBool(true);
     m_darkMode = o.value(QStringLiteral("darkMode")).toBool(false);
-    m_gridColumns = o.value(QStringLiteral("gridColumns")).toInt(9);
+    m_gridColumns = o.value(QStringLiteral("gridColumns")).toInt(7);
     m_searchCategory = o.value(QStringLiteral("searchCategory")).toString(QStringLiteral("app"));
 
     // 以注册表为准，避免用户手工改动后配置与系统不一致

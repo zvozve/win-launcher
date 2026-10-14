@@ -4,23 +4,24 @@
 #include <QtGlobal>
 
 /*
- * Win32 窗口视觉效果封装（毛玻璃 / 圆角 / 深色标题栏 / 隐藏任务栏图标）。
- * 全部走原生 API，QML 侧只负责把背景留成半透明。
+ * Win32 窗口「外观属性」封装：不进任务栏 / 始终置顶 / 深色标题栏 / 圆角开关。
  *
- * 模糊材质两条路：
- *   SetWindowCompositionAttribute + ACCENT_ENABLE_ACRYLICBLURBEHIND
- *     —— 无边框 + 逐像素透明的窗口上最稳，Win10 1803+ / Win11 都能用
- *   DwmSetWindowAttribute + DWMWA_SYSTEMBACKDROP_TYPE
- *     —— 只对「不透明客户区」的常规窗口可靠，留给 Mica 系列用
+ * ★ 面板的模糊、圆角、外阴影**不走这里**。
+ *   系统材质（DWMWA_SYSTEMBACKDROP_TYPE / SetWindowCompositionAttribute 的
+ *   ACCENT_ENABLE_ACRYLICBLURBEHIND）由 DWM 按「矩形」合成，SetWindowRgn 裁不到它，
+ *   于是四个角上会露出方方正正的玻璃 —— 这正是「圆角不生效」的根源；
+ *   而且无边框窗口拿不到 DWM 的原生外阴影。
+ *   现在改成自绘：C++ 抓屏 → 模糊 + 提饱和 → 裁圆角 → 烘外阴影 → QML 铺图。
+ *   完整理由与实现见 inc/BackdropBlur.h、src/BackdropBlur.cpp。
  *
- * 圆角用 SetWindowRgn 手工裁区域：DWM 自带的圆角只有 ~8px 且没法调，
- * 和 QML 里 18px 的圆角对不上，会出现角上一条硬边。
+ * setRoundedCorners / setRoundedRegion 是备用手段（例如将来要做不依赖位图的
+ * 轻量版本），当前没有被调用。
  */
 namespace WindowEffects {
 
 enum Backdrop {
     BackdropNone = 0,
-    BackdropAcrylic,   // 丙烯酸（推荐，无边框窗口用这个）
+    BackdropAcrylic,   // 丙烯酸（无边框窗口上最稳，但见上面的说明）
     BackdropMica,      // Win11 主材质
     BackdropMicaAlt,
     BackdropTransient, // 同 Acrylic，语义上表示"浮出面板"

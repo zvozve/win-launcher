@@ -5,6 +5,11 @@ import WinLauncher.Core
 
 /*
  * 弹出面板主体：搜索栏 + 图标网格 + 状态行。
+ *
+ * 网格密度对齐 macOS 26/27 的 Applications 面板：**7 列 × 4 行**，
+ * 但滚动方向是**纵向**的（macOS 那边是一个纵向滚动的分组列表，不是横向翻页，
+ * 所以这里也没有底部圆点）。cellHeight 取容器高度的 1/4，于是不管面板多高，
+ * 可见区域永远正好 4 行，滚轮/拖动按行吸附。
  */
 Item {
     id: root
@@ -13,6 +18,15 @@ Item {
     signal editRequested()
     signal settingsRequested()
     signal closeRequested()
+
+    // 圆角半径必须和 LauncherWindow.cornerRadius 一致（底图按这个半径裁的）
+    property real cornerRadius: 26
+    // C++ 烘的玻璃底图是否已就绪；没就绪时 GlassPanel 走不透明兜底
+    property bool glassReady: false
+
+    // 一屏可见的网格密度（对齐 macOS：7 列 × 4 行）
+    readonly property int visibleRows: 4
+    readonly property int columns: Math.max(3, AppConfig.gridColumns)
 
     readonly property bool dark: AppConfig.darkMode
     readonly property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
@@ -29,6 +43,8 @@ Item {
     GlassPanel {
         anchors.fill: parent
         dark: root.dark
+        glassReady: root.glassReady
+        cornerRadius: root.cornerRadius
     }
 
     ColumnLayout {
@@ -70,16 +86,9 @@ Item {
                 textColor: root.textColor
                 onClicked: root.settingsRequested()
             }
-
-            PillButton {
-                text: qsTr("关闭")
-                dark: root.dark
-                textColor: root.textColor
-                onClicked: root.closeRequested()
-            }
         }
 
-        // ---- 中部：图标网格 ----
+        // ---- 中部：7 × 4 的图标网格（自由纵向滚动）----
         GridView {
             id: grid
             Layout.fillWidth: true
@@ -87,8 +96,12 @@ Item {
 
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            cellWidth: Math.max(56, Math.floor(width / Math.max(1, AppConfig.gridColumns)))
-            cellHeight: Math.round(cellWidth * 0.82)
+
+            cellWidth: width / root.columns
+            // 行高取容器高度的 1/4（向下取整）：静止时一屏正好 4 行，
+            // 滚动本身是自由的（不做吸附、不锁位置）。取整是为了让 4 行严格
+            // 不超过容器高度，否则第 5 行会露出半截。
+            cellHeight: Math.floor(height / root.visibleRows)
 
             model: Ctrl.visibleApps
 
@@ -101,7 +114,7 @@ Item {
                 onActivated: root.launchRequested(app)
             }
 
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            // 不挂 ScrollBar：macOS 那边没有滚动条，靠滚轮/拖动
 
             Text {
                 anchors.centerIn: parent
@@ -123,6 +136,7 @@ Item {
 
         // ---- Everything 全盘搜索结果 ----
         ColumnLayout {
+            id: everythingRow
             Layout.fillWidth: true
             spacing: 4
             visible: Ctrl.searchResults.length > 0
@@ -176,6 +190,7 @@ Item {
 
         // ---- 底部状态行 ----
         RowLayout {
+            id: statusRow
             Layout.fillWidth: true
             spacing: 10
 

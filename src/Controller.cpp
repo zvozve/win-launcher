@@ -6,9 +6,12 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QScreen>
 #include <QSet>
 #include <QStandardPaths>
 #include <QTimer>
@@ -16,6 +19,8 @@
 #include <utility>
 
 #include "AppItem.h"
+#include "BackdropBlur.h"
+#include "BackdropProvider.h"
 #include "DebugTrace.h"
 #include "HotkeyManager.h"
 #include "IconProvider.h"
@@ -27,6 +32,13 @@ namespace {
 // 每片扫描占用主线程的时间预算：太小会频繁让出事件循环，
 // 太大会让面板卡顿。25ms 是「跟手」与「扫得快」的折中。
 constexpr int kScanSliceMs = 25;
+
+// 面板玻璃底图：半径/降采样/饱和度都是「逻辑像素 / 倍数」意义上的参数
+//   36px 的模糊半径是照 macOS vibrancy 的观感调的；降采样只影响速度不影响强度；
+//   饱和度 1.6 对应 macOS 那层 backdrop-filter: blur() saturate()。
+constexpr int kBackdropBlurRadius = 36;
+constexpr int kBackdropDownsample = 4;
+constexpr qreal kBackdropSaturation = 1.6;
 
 bool g_autoStartLaunch = false;
 
@@ -56,6 +68,84 @@ Controller::Controller(Config *config, EverythingSearch *everything, QObject *pa
 
 // ---- 初始化 ---------------------------------------------------------------
 
+void Controller::attachBackdropProvider(BackdropProvider *provider)
+{
+    m_backdrop = provider;
+}
+
+/*
+ * 抓屏 + 模糊 + 圆角 + 外阴影，生成面板底图。
+ *
+ * 时间点很关键：必须在窗口 show() 之前调，此刻屏幕上是「没有本窗口」的干净画面。
+ * 底图覆盖的范围是**整个窗口**（面板 + 四周阴影边距），因为阴影要画在面板外面。
+ *
+ * 传入的是窗口的物理像素矩形：不要改成传 Qt 的逻辑坐标再乘 dpr，多屏不同 DPR 时
+ * 那个换算不成立（详见 LauncherWindow::showAtCursor）。
+ *
+ * 成本：窗口约 1330×830 物理像素，降采样 4 倍后只有 330×200，3 次 box blur 是
+ * 毫秒级，整个函数通常 10~50ms，不会明显拖慢弹出。
+ */
+void Controller::refreshBackdrop(const QRect &windowRectPx, qreal cornerRadiusLogical, qreal dpr)
+{
+    if (!m_backdrop || windowRectPx.width() <= 1 || windowRectPx.height() <= 1)
+        return;
+
+    QElapsedTimer timer;
+    timer.start();
+
+    const QImage shot = BackdropBlur::grabScreen(windowRectPx);
+    if (shot.isNull()) {
+        wlTrace("backdrop: 抓屏失败，沿用上一张（或退化为纯色玻璃）");
+        return;
+    }
+
+    BackdropBlur::PanelOptions opt;
+    // 面板在底图里的位置 = 窗口矩形内缩一个阴影边距
+    const int marginPx = qRound(LauncherWindow::kShadowMargin * (dpr > 0.0 ? dpr : 1.0));
+    opt.panelRectInImage = shot.rect().adjusted(marginPx, marginPx, -marginPx, -marginPx);
+    opt.radiusPx = cornerRadiusLogical;
+    opt.dpr = dpr;
+    opt.blurRadiusPx = kBackdropBlurRadius;
+    opt.downsample = kBackdropDownsample;
+    opt.saturation = kBackdropSaturation;
+
+    const QImage image = BackdropBlur::buildPanelBackdrop(shot, opt);
+    if (image.isNull()) {
+        wlTrace("backdrop: 合成底图失败");
+        return;
+    }
+
+    m_backdrop->setImage(image);
+    ++m_backdropToken;
+    emit backdropChanged();
+
+    // 排查用：把底图落盘，直接看圆角 / 阴影 / 裁断对不对
+    if (qEnvironmentVariableIsSet("WINLAUNCHER_DUMP_BACKDROP")) {
+        const QString path = QDir(QCoreApplication::applicationDirPath())
+                                 .filePath(QStringLiteral("backdrop-dump.png"));
+        image.save(path, "PNG");
+    }
+
+    wlTrace(QStringLiteral("backdrop: canvas=%1x%2 dpr=%3 blur=%4 ds=%5 sat=%6 r=%7 in %8ms")
+                .arg(image.width())
+                .arg(image.height())
+                .arg(dpr)
+                .arg(kBackdropBlurRadius)
+                .arg(kBackdropDownsample)
+                .arg(kBackdropSaturation)
+                .arg(cornerRadiusLogical)
+                .arg(timer.elapsed()));
+}
+
+void Controller::clearBackdrop()
+{
+    if (!m_backdrop)
+        return;
+    m_backdrop->setImage(QImage());
+    ++m_backdropToken;
+    emit backdropChanged();
+}
+
 void Controller::attachWindow(LauncherWindow *window)
 {
     m_window = window;
@@ -68,6 +158,12 @@ void Controller::attachWindow(LauncherWindow *window)
             [this] { m_window->setHideOnFocusOut(m_config->hideOnFocusOut()); });
     connect(m_config, &Config::darkModeChanged, m_window,
             [this] { m_window->setDarkBackdrop(m_config->darkMode()); });
+
+    // 同步连接：窗口就是靠这个在 show() 之前把底图抓好的，异步会来不及。
+    connect(m_window, &LauncherWindow::backdropRequested, this,
+            [this](const QRect &windowRectPx, qreal radiusLogical, qreal dpr) {
+                refreshBackdrop(windowRectPx, radiusLogical, dpr);
+            });
 }
 
 void Controller::attachHotkeys(HotkeyManager *hotkeys)

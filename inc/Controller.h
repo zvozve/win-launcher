@@ -2,6 +2,7 @@
 
 #include <QList>
 #include <QObject>
+#include <QRect>
 #include <QString>
 #include <QUrl>
 
@@ -12,6 +13,7 @@
 #include "EverythingSearch.h"
 
 class AppItem;
+class BackdropProvider;
 class HotkeyManager;
 class LauncherWindow;
 class QTimer;
@@ -48,12 +50,17 @@ class Controller : public QObject
     Q_PROPERTY(QStringList searchCategoryKeys READ searchCategoryKeys CONSTANT)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
     Q_PROPERTY(bool autoStartLaunch READ autoStartLaunch CONSTANT)
+    // 面板背景图的版本号：每抓一次新背景 +1，QML 用 "image://wlbg/panel?<token>"
+    // 取图（带 token 才不会被 QML 的图片缓存拦住）
+    Q_PROPERTY(int backdropToken READ backdropToken NOTIFY backdropChanged)
 
 public:
     explicit Controller(Config *config, EverythingSearch *everything, QObject *parent = nullptr);
 
     void attachWindow(LauncherWindow *window);
     void attachHotkeys(HotkeyManager *hotkeys);
+    // provider 的所有权归 QQmlEngine（addImageProvider 会接管），这里只记指针
+    void attachBackdropProvider(BackdropProvider *provider);
 
     // ---- QML 可调用 ----
     Q_INVOKABLE void rescan();
@@ -67,6 +74,15 @@ public:
     Q_INVOKABLE void requestQuit();
     Q_INVOKABLE void notifyError(const QString &text);
     Q_INVOKABLE bool setHotkey(const QString &sequence);
+
+    /*
+     * 抓取窗口区域（物理像素，Win32 坐标）的桌面像素，模糊 + 裁圆角 + 烘外阴影后
+     * 交给 QML 当面板底图。必须在窗口 show() 之前调用，否则会抓到自己的上一帧。
+     * 抓图失败（远程桌面、区域越界等）时保持上一次的图，QML 会退化成纯色玻璃。
+     */
+    void refreshBackdrop(const QRect &windowRectPx, qreal cornerRadiusLogical, qreal dpr);
+    // 丢掉当前底图（下次弹出前会重新抓）
+    void clearBackdrop();
 
     // ---- getters ----
     QList<QObject *> apps() const { return m_apps; }
@@ -88,6 +104,10 @@ public:
     static QString appVersion();
     bool autoStartLaunch() const;
 
+    // 供 QQmlEngine::addImageProvider 注册（image://wlbg/）
+    BackdropProvider *backdropProvider() const { return m_backdrop; }
+    int backdropToken() const { return m_backdropToken; }
+
     void setQuery(const QString &q);
 
 signals:
@@ -100,6 +120,7 @@ signals:
     void scanProgressChanged();
     void statusTextChanged();
     void errorTextChanged();
+    void backdropChanged();
 
     // 给 QML 的「外部触发」信号（托盘 / 热键）
     void showPanelRequested();
@@ -126,7 +147,9 @@ private:
     EverythingSearch *m_everything = nullptr;
     LauncherWindow *m_window = nullptr;
     HotkeyManager *m_hotkeys = nullptr;
+    BackdropProvider *m_backdrop = nullptr;
     QTimer *m_searchDebounce = nullptr;
+    int m_backdropToken = 0;
 
     QList<AppItem *> m_all;      // 扫描得到的（不含手动项）
     QList<AppItem *> m_manual;   // 用户拖入/手工添加的

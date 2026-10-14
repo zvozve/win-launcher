@@ -17,9 +17,10 @@ Item {
     signal activated()
 
     readonly property bool hasIcon: app !== null && image.status === Image.Ready
+    // 7×4 的格子大约 165×140，图标取到 ~62 才接近 macOS 启动台的观感
     readonly property int iconSize: Math.max(
-                                        28, Math.min(52, Math.round(Math.min(width * 0.42,
-                                                                            height * 0.50))))
+                                        28, Math.min(64, Math.round(Math.min(width * 0.38,
+                                                                            height * 0.48))))
 
     // ---- 鼠标悬停背景框 ----
     Rectangle {
@@ -46,7 +47,7 @@ Item {
     Column {
         anchors.centerIn: parent
         width: parent.width - 14
-        spacing: 5
+        spacing: 7
 
         Item {
             width: root.iconSize
@@ -91,7 +92,9 @@ Item {
             wrapMode: Text.Wrap
             maximumLineCount: 2
             elide: Text.ElideRight
-            lineHeight: 0.95
+            // 行距 0.95 会把两行名字压在一起，1.05 才是可读的行距
+            lineHeight: 1.05
+            lineHeightMode: Text.ProportionalHeight
         }
     }
 

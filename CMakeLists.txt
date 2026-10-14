@@ -48,6 +48,8 @@ add_executable(WinLauncher WIN32
     src/main.cpp
     src/AppItem.cpp
     src/AppScanner.cpp
+    src/BackdropBlur.cpp
+    src/BackdropProvider.cpp
     src/Config.cpp
     src/Controller.cpp
     src/DebugTrace.cpp
@@ -62,6 +64,8 @@ add_executable(WinLauncher WIN32
     # 下不列出来的话 moc 不会被触发, 表现为"无法解析的外部符号 staticMetaObject"。
     inc/AppItem.h
     inc/AppScanner.h
+    inc/BackdropBlur.h
+    inc/BackdropProvider.h
     inc/Config.h
     inc/Controller.h
     inc/DebugTrace.h

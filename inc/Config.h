@@ -90,6 +90,6 @@ private:
     QString m_searchSource = QStringLiteral("local");
     bool m_darkMode = false;
     bool m_followSystemTheme = true;
-    int m_gridColumns = 9;
+    int m_gridColumns = 7;
     QString m_searchCategory = QStringLiteral("app");
 };

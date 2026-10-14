@@ -17,6 +17,7 @@
 #include <QtGlobal>
 
 #include "Controller.h"
+#include "BackdropProvider.h"
 #include "Config.h"
 #include "DebugTrace.h"
 #include "EverythingSearch.h"
@@ -202,6 +203,14 @@ int main(int argc, char *argv[])
     wlTrace("qml types registered");
 
     QQmlApplicationEngine engine;
+
+    // 面板玻璃底图：C++ 抓屏 + 模糊后经 image://wlbg/panel?<token> 交给 QML。
+    // addImageProvider 会接管所有权（engine 比 controller 先析构），所以这里 new 完不管。
+    // 必须在 load() 之前注册，否则 QML 里的 image://wlbg/... 会解析失败。
+    auto *backdrop = new BackdropProvider();
+    engine.addImageProvider(QStringLiteral("wlbg"), backdrop);
+    controller.attachBackdropProvider(backdrop);
+
     engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
     wlTrace("qml loaded");
     if (engine.rootObjects().isEmpty()) {

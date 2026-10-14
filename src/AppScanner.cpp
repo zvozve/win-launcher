@@ -19,6 +19,48 @@
 
 namespace {
 
+/*
+ * 明显是「卸载 / 修复 / 驱动包 / 系统补丁」的条目，直接不收。
+ *
+ * Windows 的开始菜单和注册表里这类东西特别多：每装一个驱动就留下一条
+ * "Windows Driver Package - XXX"，每个软件都有 Uninstall 快捷方式。它们不是
+ * 用户想「启动」的应用，macOS 的启动台里也看不到这些入口。
+ */
+bool isNoiseName(const QString &name)
+{
+    static const QStringList kNoise = {
+        QStringLiteral("uninstall"), QStringLiteral("unins"),
+        QStringLiteral("卸载"),       QStringLiteral("移除"),
+        QStringLiteral("删除"),       QStringLiteral("repair"),
+        QStringLiteral("修复"),       QStringLiteral("windows driver package"),
+        QStringLiteral("驱动程序包"),  QStringLiteral("update for "),
+        QStringLiteral("security update"), QStringLiteral("hotfix"),
+    };
+
+    const QString lower = name.toLower();
+    for (const QString &k : kNoise) {
+        if (lower.contains(k))
+            return true;
+    }
+    return false;
+}
+
+/*
+ * 只收「能启动的东西」。
+ *
+ * 开始菜单里常有点向 .pdf / .chm / .txt 的快捷方式（用户手册、更新日志之类），
+ * 解出目标后如果不看类型就会变成一个点了没反应的图标 —— 之前 PDF 混进来就是这么来的。
+ * 解析不出目标（空串）的情况不在这里判断，那是 UWP / shell 命名空间项，另走一条路。
+ */
+bool isLaunchableTarget(const QString &target)
+{
+    static const QStringList kExts = {
+        QStringLiteral("exe"), QStringLiteral("com"), QStringLiteral("bat"),
+        QStringLiteral("cmd"), QStringLiteral("msc"), QStringLiteral("ps1"),
+    };
+    return kExts.contains(QFileInfo(target).suffix().toLower());
+}
+
 QString knownFolder(int csidl)
 {
     wchar_t buf[MAX_PATH] = {0};
@@ -68,10 +110,14 @@ void appendStartMenuTasks(const QString &root, QList<AppScanner::Task> *out)
                     QDirIterator::Subdirectories);
     while (it.hasNext()) {
         const QString path = it.next();
+        const QString baseName = QFileInfo(path).completeBaseName();
+        // 名字里就写着卸载的，连图标都不用去提
+        if (isNoiseName(baseName))
+            continue;
         AppScanner::Task task;
         task.kind = AppScanner::Task::Link;
         task.path = QFileInfo(path).absoluteFilePath();
-        task.name = QFileInfo(path).completeBaseName();
+        task.name = baseName;
         task.seed = task.path.toLower();
         out->append(task);
     }
@@ -93,9 +139,17 @@ void appendRegistryTasks(QList<AppScanner::Task> *out, QSet<QString> *seenTarget
             const QString displayName = reg.value(QStringLiteral("DisplayName")).toString();
             const int systemComponent = reg.value(QStringLiteral("SystemComponent"), 0).toInt();
             const QString displayIconRaw = reg.value(QStringLiteral("DisplayIcon")).toString();
+            // ParentKeyName / ReleaseType 非空 = 这是某个软件的子组件或系统补丁
+            // （驱动包、Windows Update 项都是），不是一个能独立启动的应用
+            const QString parentKey = reg.value(QStringLiteral("ParentKeyName")).toString();
+            const QString releaseType = reg.value(QStringLiteral("ReleaseType")).toString();
             reg.endGroup();
 
-            if (displayName.isEmpty() || systemComponent == 1 || displayIconRaw.isEmpty())
+            if (displayName.isEmpty() || systemComponent == 1)
+                continue;
+            if (!parentKey.isEmpty() || !releaseType.isEmpty())
+                continue;
+            if (displayIconRaw.isEmpty() || isNoiseName(displayName))
                 continue;
 
             const QString iconPath = normalizeDisplayIcon(displayIconRaw);
@@ -174,12 +228,20 @@ bool AppScanner::runTask(const Task &task, ScannedApp *out)
         app.kind = AppItem::KindUrl;
         app.target = info.target;
     } else if (info.valid) {
+        // 目标不是可执行文件的（开始菜单里常见的「用户手册」指向 .pdf / .chm / .txt），
+        // 收进来就是一个点了没反应的图标 —— 之前 PDF 混进列表就是这么来的。
+        if (!isLaunchableTarget(info.target)) {
+            wlTrace(QStringLiteral("scan: skip non-launchable -> ") + info.target);
+            return false;
+        }
         app.kind = AppItem::KindDesktop;
         app.target = info.target;
         app.arguments = info.arguments;
         app.workingDir = info.workingDir;
     } else {
         // 解析不出目标（目标已卸载 / shell 命名空间项），保留条目但标为 manual
+        if (isNoiseName(app.name))
+            return false;
         app.kind = AppItem::KindManual;
     }
 
