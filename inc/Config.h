@@ -25,6 +25,11 @@ class Config : public QObject
     Q_PROPERTY(int gridColumns READ gridColumns WRITE setGridColumns NOTIFY gridColumnsChanged)
     Q_PROPERTY(QString searchCategory READ searchCategory WRITE setSearchCategory
                    NOTIFY searchCategoryChanged)
+    // 启动台顶部的应用分类（dev / media / office / internet / utility / other / all）。
+    // 和上面的 searchCategory 不是一回事：那个是「搜索类型」（应用/文档/图片…），
+    // 这个是「应用的类别」，值域见 AppCategory::keys()。
+    Q_PROPERTY(QString appCategory READ appCategory WRITE setAppCategory
+                   NOTIFY appCategoryChanged)
     Q_PROPERTY(QString configPath READ configPath CONSTANT)
 
 public:
@@ -41,6 +46,7 @@ public:
     bool followSystemTheme() const { return m_followSystemTheme; }
     int gridColumns() const { return m_gridColumns; }
     QString searchCategory() const { return m_searchCategory; }
+    QString appCategory() const { return m_appCategory; }
     QString configPath() const;
 
     void setHotkey(const QString &v);
@@ -52,6 +58,7 @@ public:
     void setFollowSystemTheme(bool v);
     void setGridColumns(int v);
     void setSearchCategory(const QString &v);
+    void setAppCategory(const QString &v);
 
     // ---- 搜索类型（本地过滤 + Everything 的 ext: 过滤共用同一张表）----
     // key: app / doc / image / video / audio / archive / all
@@ -79,6 +86,7 @@ signals:
     void followSystemThemeChanged();
     void gridColumnsChanged();
     void searchCategoryChanged();
+    void appCategoryChanged();
 
 private:
     void syncDarkMode();
@@ -92,4 +100,5 @@ private:
     bool m_followSystemTheme = true;
     int m_gridColumns = 7;
     QString m_searchCategory = QStringLiteral("app");
+    QString m_appCategory = QStringLiteral("all");
 };

@@ -46,6 +46,7 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS
 # ======================================================================
 add_executable(WinLauncher WIN32
     src/main.cpp
+    src/AppCategory.cpp
     src/AppItem.cpp
     src/AppScanner.cpp
     src/BackdropBlur.cpp
@@ -62,6 +63,7 @@ add_executable(WinLauncher WIN32
     src/WindowEffects.cpp
     # 头文件必须显式列出: AUTOMOC 只扫描 target sources 里的文件, 放在 inc/
     # 下不列出来的话 moc 不会被触发, 表现为"无法解析的外部符号 staticMetaObject"。
+    inc/AppCategory.h
     inc/AppItem.h
     inc/AppScanner.h
     inc/BackdropBlur.h

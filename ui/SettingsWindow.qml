@@ -17,7 +17,7 @@ Window {
     readonly property color lineColor: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.08)
 
     width: 440
-    height: 566
+    height: 610
     visible: false
     title: qsTr("WinLauncher 设置")
     color: bgColor
@@ -238,6 +238,27 @@ Window {
                             AppConfig.includeRegistry = checked
                             Ctrl.rescan()
                         }
+                    }
+                }
+
+                SettingRow {
+                    Layout.leftMargin: 16
+                    Layout.rightMargin: 16
+                    Layout.fillWidth: true
+                    label: qsTr("已隐藏的图标")
+                    hint: Ctrl.hiddenCount > 0
+                          ? qsTr("从启动台移除了 %1 个").arg(Ctrl.hiddenCount)
+                          : qsTr("在图标上点右键可以移除")
+                    textColor: root.textColor
+                    subTextColor: root.subTextColor
+
+                    PillButton {
+                        text: qsTr("全部恢复")
+                        dark: root.dark
+                        textColor: root.textColor
+                        enabled: Ctrl.hiddenCount > 0
+                        opacity: enabled ? 1.0 : 0.45
+                        onClicked: Ctrl.unhideAll()
                     }
                 }
 

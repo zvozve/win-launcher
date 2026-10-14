@@ -18,6 +18,7 @@ struct ScannedApp
     QString workingDir;
     QString sourcePath;
     QString iconPath;
+    QString category;  // AppCategory::classify() 的结果，供启动台的分类标签筛选
     QString seed;      // 用于生成稳定 ID
     bool removable = false;
 };

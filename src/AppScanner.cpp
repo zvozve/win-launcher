@@ -7,6 +7,7 @@
 #include <QSettings>
 
 #include "AppItem.h"
+#include "AppCategory.h"
 #include "DebugTrace.h"
 #include "IconProvider.h"
 #include "ShortcutResolver.h"
@@ -211,6 +212,7 @@ bool AppScanner::runTask(const Task &task, ScannedApp *out)
         app.target = task.path;
         app.workingDir = QFileInfo(task.path).absolutePath();
         app.sourcePath = task.path;
+        app.category = AppCategory::classify(app.name, app.target);
         app.iconPath = IconProvider::iconForPath(task.path);
         *out = app;
         return true;
@@ -250,6 +252,7 @@ bool AppScanner::runTask(const Task &task, ScannedApp *out)
         app.kind = AppItem::KindManual;
     }
 
+    app.category = AppCategory::classify(app.name, app.target);
     app.iconPath = IconProvider::iconForPath(pickIconSource(info, task.path));
     *out = app;
     return !app.name.isEmpty();
@@ -265,6 +268,7 @@ AppItem *AppScanner::toItem(const ScannedApp &data, QObject *parent)
     item->setWorkingDir(data.workingDir);
     item->setSourcePath(data.sourcePath);
     item->setIconPath(data.iconPath);
+    item->setCategory(data.category);
     item->setRemovable(data.removable);
     item->rebindId(data.seed.isEmpty() ? data.target.toLower() : data.seed);
     return item;

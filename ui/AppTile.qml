@@ -1,11 +1,13 @@
 import QtQuick
+import QtQuick.Controls
 
 /*
  * 网格里的单个应用图标。
  * 尺寸由 GridView 的 cellWidth/cellHeight 决定，内容用居中 Column 排：
  *   悬停背景框（整格）+ 图标 + 名称
- * 之前用「图标 y 按 label 高度反推」的写法在格子变矮后会算出负值、和上一行叠在一起，
- * 改成 Column 之后对齐是自解释的。
+ *
+ * 右键菜单：打开 / 以管理员身份打开 / 打开文件所在位置 / 从启动台移除。
+ * 这里只发信号，真正的动作在 Controller（LauncherPanel 负责连起来）。
  */
 Item {
     id: root
@@ -15,12 +17,87 @@ Item {
     property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
 
     signal activated()
+    signal adminRequested()
+    signal revealRequested()
+    signal removeRequested()
 
     readonly property bool hasIcon: app !== null && image.status === Image.Ready
     // 7×4 的格子大约 165×140，图标取到 ~62 才接近 macOS 启动台的观感
     readonly property int iconSize: Math.max(
                                         28, Math.min(64, Math.round(Math.min(width * 0.38,
                                                                             height * 0.48))))
+
+    // ---- 右键菜单 ----
+    Menu {
+        id: contextMenu
+
+        delegate: MenuItem {
+            id: menuEntry
+
+            implicitHeight: 30
+            implicitWidth: 164
+
+            contentItem: Text {
+                text: menuEntry.text
+                font.pixelSize: 12
+                color: root.dark ? "#F2F2F7" : "#1C1C1E"
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: 12
+            }
+
+            background: Rectangle {
+                radius: 6
+                color: menuEntry.highlighted
+                       ? (root.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.07))
+                       : "transparent"
+            }
+        }
+
+        background: Rectangle {
+            implicitWidth: 176
+            implicitHeight: 8 + contentItem.implicitHeight
+            radius: 10
+            color: root.dark ? Qt.rgba(0.15, 0.15, 0.17, 0.99) : Qt.rgba(1, 1, 1, 0.99)
+            border.width: 1
+            border.color: root.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
+        }
+
+        MenuItem {
+            text: qsTr("打开")
+            onTriggered: root.activated()
+        }
+
+        MenuSeparator {
+            contentItem: Rectangle {
+                implicitWidth: 164
+                implicitHeight: 1
+                color: root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+            }
+        }
+
+        MenuItem {
+            text: qsTr("以管理员身份打开")
+            onTriggered: root.adminRequested()
+        }
+
+        MenuItem {
+            text: qsTr("打开文件所在位置")
+            onTriggered: root.revealRequested()
+        }
+
+        MenuSeparator {
+            contentItem: Rectangle {
+                implicitWidth: 164
+                implicitHeight: 1
+                color: root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+            }
+        }
+
+        MenuItem {
+            text: qsTr("从启动台移除")
+            onTriggered: root.removeRequested()
+        }
+    }
 
     // ---- 鼠标悬停背景框 ----
     Rectangle {
@@ -101,9 +178,15 @@ Item {
     MouseArea {
         id: area
         anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.activated()
+        onClicked: function (mouse) {
+            if (mouse.button === Qt.RightButton)
+                contextMenu.popup()
+            else
+                root.activated()
+        }
     }
 
     scale: area.pressed ? 0.94 : 1.0

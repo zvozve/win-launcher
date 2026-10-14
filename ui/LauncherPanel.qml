@@ -88,6 +88,13 @@ Item {
             }
         }
 
+        // ---- 分类标签（对齐 macOS Applications 面板那一排）----
+        CategoryBar {
+            Layout.fillWidth: true
+            dark: root.dark
+            textColor: root.textColor
+        }
+
         // ---- 中部：7 × 4 的图标网格（自由纵向滚动）----
         GridView {
             id: grid
@@ -112,6 +119,9 @@ Item {
                 textColor: root.textColor
                 app: modelData
                 onActivated: root.launchRequested(app)
+                onAdminRequested: Ctrl.runAsAdmin(app)
+                onRevealRequested: Ctrl.revealInExplorer(app)
+                onRemoveRequested: Ctrl.hideApp(app)
             }
 
             // 不挂 ScrollBar：macOS 那边没有滚动条，靠滚轮/拖动

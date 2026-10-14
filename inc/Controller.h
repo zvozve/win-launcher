@@ -3,8 +3,10 @@
 #include <QList>
 #include <QObject>
 #include <QRect>
+#include <QSet>
 #include <QString>
 #include <QUrl>
+#include <QVariantList>
 
 #include "AppScanner.h"
 
@@ -53,6 +55,13 @@ class Controller : public QObject
     // 面板背景图的版本号：每抓一次新背景 +1，QML 用 "image://wlbg/panel?<token>"
     // 取图（带 token 才不会被 QML 的图片缓存拦住）
     Q_PROPERTY(int backdropToken READ backdropToken NOTIFY backdropChanged)
+    /*
+     * 顶部分类标签的数据源：每项 { key, label, count }。
+     * count 是「当前可见基础列表」里属于该分类的条目数，随着搜索词变化重算。
+     */
+    Q_PROPERTY(QVariantList appCategories READ appCategories NOTIFY appCategoriesChanged)
+    // 被用户从启动台移除（进 hidden 名单）的条目数，设置界面用
+    Q_PROPERTY(int hiddenCount READ hiddenCount NOTIFY hiddenCountChanged)
 
 public:
     explicit Controller(Config *config, EverythingSearch *everything, QObject *parent = nullptr);
@@ -74,6 +83,17 @@ public:
     Q_INVOKABLE void requestQuit();
     Q_INVOKABLE void notifyError(const QString &text);
     Q_INVOKABLE bool setHotkey(const QString &sequence);
+
+    // ---- 图标右键菜单 ----
+    Q_INVOKABLE void runAsAdmin(QObject *item);       // 以管理员身份启动（弹 UAC）
+    Q_INVOKABLE void revealInExplorer(QObject *item); // 在资源管理器中定位
+    /*
+     * 「从启动台移除」：只把 id 加进 hidden 名单（layout.json），**不删文件、不删条目**，
+     * 所以是可恢复的 —— 设置界面里有「恢复全部」。
+     * 扫描出来的条目尤其不能真删：下次扫描它又回来了。
+     */
+    Q_INVOKABLE void hideApp(QObject *item);
+    Q_INVOKABLE void unhideAll();
 
     /*
      * 抓取窗口区域（物理像素，Win32 坐标）的桌面像素，模糊 + 裁圆角 + 烘外阴影后
@@ -107,6 +127,8 @@ public:
     // 供 QQmlEngine::addImageProvider 注册（image://wlbg/）
     BackdropProvider *backdropProvider() const { return m_backdrop; }
     int backdropToken() const { return m_backdropToken; }
+    QVariantList appCategories() const { return m_appCategories; }
+    int hiddenCount() const { return m_hidden.size(); }
 
     void setQuery(const QString &q);
 
@@ -121,6 +143,8 @@ signals:
     void statusTextChanged();
     void errorTextChanged();
     void backdropChanged();
+    void appCategoriesChanged();
+    void hiddenCountChanged();
 
     // 给 QML 的「外部触发」信号（托盘 / 热键）
     void showPanelRequested();
@@ -140,8 +164,9 @@ private:
     void rebuildVisible();
     void setStatus(const QString &text);
     void setError(const QString &text);
-    bool loadManualApps();
-    void saveManualApps();
+    void rebuildCategories();
+    bool loadLayout();   // layout.json：手动条目 + 隐藏名单
+    void saveLayout();
 
     Config *m_config = nullptr;
     EverythingSearch *m_everything = nullptr;
@@ -153,9 +178,11 @@ private:
 
     QList<AppItem *> m_all;      // 扫描得到的（不含手动项）
     QList<AppItem *> m_manual;   // 用户拖入/手工添加的
-    QList<QObject *> m_apps;     // 合并后的完整列表
-    QList<QObject *> m_visible;  // 搜索过滤后
+    QList<QObject *> m_apps;     // 合并 + 剔除隐藏后的基础列表
+    QList<QObject *> m_visible;  // 分类 + 搜索过滤后
     QList<QObject *> m_searchResults;
+    QSet<QString> m_hidden;      // 用户从启动台移除的条目 id（可恢复）
+    QVariantList m_appCategories; // [{key,label,count}]，供顶部分类标签用
 
     QList<AppScanner::Task> m_scanTasks;
     QList<ScannedApp> m_scanBuffer;

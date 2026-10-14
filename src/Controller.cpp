@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QHash>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -15,10 +16,12 @@
 #include <QSet>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QVariantMap>
 
 #include <utility>
 
 #include "AppItem.h"
+#include "AppCategory.h"
 #include "BackdropBlur.h"
 #include "BackdropProvider.h"
 #include "DebugTrace.h"
@@ -60,7 +63,7 @@ Controller::Controller(Config *config, EverythingSearch *everything, QObject *pa
     m_searchDebounce->setInterval(140);
     connect(m_searchDebounce, &QTimer::timeout, this, &Controller::rebuildVisible);
 
-    loadManualApps();
+    loadLayout();
     rebuildVisible();
 
     setStatus(QStringLiteral("就绪"));
@@ -308,16 +311,36 @@ void Controller::rebuildVisible()
         merged.append(item);
     }
 
-    const bool appsListChanged = (merged.size() != m_apps.size());
-    m_apps = merged;
+    // 2) 剔掉被用户从启动台移除的（layout.json 的 hidden 名单，可在设置里恢复）
+    QList<QObject *> shown;
+    shown.reserve(merged.size());
+    for (QObject *obj : std::as_const(merged)) {
+        if (auto *item = qobject_cast<AppItem *>(obj)) {
+            if (m_hidden.contains(item->id()))
+                continue;
+        }
+        shown.append(obj);
+    }
 
-    // 2) 过滤：先按「搜索类型」，再按关键词
-    //    "app" 这一档不加扩展名限制（扫进来的本来就是程序，手动条目也想留着）
-    const QString category = m_config->searchCategory();
+    const bool appsListChanged = (shown.size() != m_apps.size());
+    m_apps = shown;
+
+    // 3) 顶部分类标签的数量（跟着上面的列表走）
+    rebuildCategories();
+
+    // 4) 过滤：应用分类 -> 搜索类型 -> 关键词
+    //    注意两个 category 不是一回事：
+    //      m_config->appCategory()    应用类别（开发/影音/办公…）
+    //      m_config->searchCategory() 搜索类型（应用/文档/图片…），它决定扩展名白名单
+    const QString appCat = m_config->appCategory();
+    const bool categoryFiltered = !appCat.isEmpty() && appCat != QLatin1String("all");
+
+    const QString searchCat = m_config->searchCategory();
     const QStringList exts =
-        Config::categoryExtensions(category).split(QLatin1Char(';'), Qt::SkipEmptyParts);
+        Config::categoryExtensions(searchCat).split(QLatin1Char(';'), Qt::SkipEmptyParts);
     const QSet<QString> allowed(exts.begin(), exts.end());
-    const bool typeFiltered = !allowed.isEmpty() && category != QLatin1String("app");
+    // "app" 这一档不加扩展名限制（扫进来的本来就是程序，手动条目也想留着）
+    const bool typeFiltered = !allowed.isEmpty() && searchCat != QLatin1String("app");
 
     const QString needle = m_query.trimmed();
     QList<QObject *> filtered;
@@ -325,6 +348,8 @@ void Controller::rebuildVisible()
     for (QObject *obj : std::as_const(m_apps)) {
         auto *item = qobject_cast<AppItem *>(obj);
         if (!item)
+            continue;
+        if (categoryFiltered && item->category() != appCat)
             continue;
         if (typeFiltered && !allowed.contains(QFileInfo(item->target()).suffix().toLower()))
             continue;
@@ -336,14 +361,14 @@ void Controller::rebuildVisible()
     }
     m_visible = filtered;
 
-    // 3) Everything 全盘结果（可选搜索源，见 doc/2.方案设计.md）
+    // 5) Everything 全盘结果（可选搜索源，见 doc/2.方案设计.md）
     const QList<QObject *> previous = m_searchResults;
     QList<QObject *> extra;
     if (!needle.isEmpty() && m_config->searchSource() == QLatin1String("everything")
         && m_everything && m_everything->isAvailable()) {
         // 类型集来自搜索栏最左侧那个选择器（Config::categoryExtensions）
         const QStringList hits =
-            m_everything->search(needle, 60, Config::categoryExtensions(category));
+            m_everything->search(needle, 60, Config::categoryExtensions(searchCat));
         QSet<QString> known;
         for (QObject *obj : std::as_const(m_apps)) {
             if (auto *item = qobject_cast<AppItem *>(obj))
@@ -377,6 +402,38 @@ void Controller::rebuildVisible()
         emit appsChanged();
     emit visibleAppsChanged();
     emit searchResultsChanged();
+}
+
+/*
+ * 顶部分类标签：[{key, label, count}]。
+ * count 针对的是「剔除隐藏后的基础列表」，不含搜索词的影响 —— 搜到一半时标签上的
+ * 数字还是全局数量，不会跳来跳去。
+ */
+void Controller::rebuildCategories()
+{
+    QHash<QString, int> counts;
+    for (QObject *obj : std::as_const(m_apps)) {
+        if (auto *item = qobject_cast<AppItem *>(obj))
+            ++counts[item->category()];
+    }
+
+    const QStringList keys = AppCategory::keys();
+    const QStringList labels = AppCategory::labels();
+
+    QVariantList cats;
+    cats.reserve(keys.size());
+    for (int i = 0; i < keys.size(); ++i) {
+        const QString key = keys.at(i);
+        QVariantMap m;
+        m.insert(QStringLiteral("key"), key);
+        m.insert(QStringLiteral("label"), labels.value(i));
+        m.insert(QStringLiteral("count"),
+                 key == QLatin1String("all") ? m_apps.size() : counts.value(key));
+        cats.append(m);
+    }
+
+    m_appCategories = cats;
+    emit appCategoriesChanged();
 }
 
 void Controller::setQuery(const QString &q)
@@ -431,7 +488,7 @@ bool Controller::addPaths(const QList<QUrl> &urls)
     }
 
     if (added > 0) {
-        saveManualApps();
+        saveLayout();
         rebuildVisible();
         emit manualAppsChanged();
         setError(QString());
@@ -448,7 +505,7 @@ void Controller::removeApp(const QString &id)
 
         AppItem *item = m_manual.takeAt(i);
         item->deleteLater();
-        saveManualApps();
+        saveLayout();
         rebuildVisible();
         emit manualAppsChanged();
         setStatus(QStringLiteral("已移除 1 个快捷方式"));
@@ -491,6 +548,66 @@ void Controller::launchItem(QObject *obj)
     }
 }
 
+void Controller::runAsAdmin(QObject *obj)
+{
+    auto *item = qobject_cast<AppItem *>(obj);
+    if (!item)
+        return;
+
+    QString error;
+    if (Launcher::runAsAdmin(item, &error)) {
+        setError(QString());
+        setStatus(QStringLiteral("已以管理员身份启动 %1").arg(item->name()));
+        if (m_window)
+            m_window->hidePanel();
+    } else {
+        setError(QStringLiteral("提权启动失败：%1").arg(error));
+    }
+}
+
+void Controller::revealInExplorer(QObject *obj)
+{
+    auto *item = qobject_cast<AppItem *>(obj);
+    if (!item)
+        return;
+
+    QString error;
+    if (Launcher::revealInExplorer(item, &error)) {
+        setError(QString());
+        // 资源管理器会盖住面板，直接收起来
+        if (m_window)
+            m_window->hidePanel();
+    } else {
+        setError(error);
+    }
+}
+
+void Controller::hideApp(QObject *obj)
+{
+    auto *item = qobject_cast<AppItem *>(obj);
+    if (!item)
+        return;
+
+    m_hidden.insert(item->id());
+    saveLayout();
+    rebuildVisible();
+    emit hiddenCountChanged();
+    setStatus(QStringLiteral("已从启动台移除「%1」（设置里可以恢复）").arg(item->name()));
+}
+
+void Controller::unhideAll()
+{
+    if (m_hidden.isEmpty())
+        return;
+
+    const int n = m_hidden.size();
+    m_hidden.clear();
+    saveLayout();
+    rebuildVisible();
+    emit hiddenCountChanged();
+    setStatus(QStringLiteral("已恢复 %1 个图标").arg(n));
+}
+
 void Controller::openConfigFolder()
 {
     const QString dir = QFileInfo(layoutPath()).absolutePath();
@@ -527,9 +644,9 @@ bool Controller::setHotkey(const QString &sequence)
     return true;
 }
 
-// ---- 手动条目持久化 -------------------------------------------------------
+// ---- 布局持久化（layout.json：手动条目 + 隐藏名单）-------------------------
 
-bool Controller::loadManualApps()
+bool Controller::loadLayout()
 {
     QFile f(layoutPath());
     if (!f.exists() || !f.open(QIODevice::ReadOnly))
@@ -544,18 +661,31 @@ bool Controller::loadManualApps()
         item->setRemovable(true);
         m_manual.append(item);
     }
-    return !m_manual.isEmpty();
+
+    const QJsonArray hidden = root.value(QStringLiteral("hidden")).toArray();
+    for (const QJsonValue &v : hidden) {
+        const QString id = v.toString();
+        if (!id.isEmpty())
+            m_hidden.insert(id);
+    }
+
+    return !m_manual.isEmpty() || !m_hidden.isEmpty();
 }
 
-void Controller::saveManualApps()
+void Controller::saveLayout()
 {
     QJsonArray manual;
     for (AppItem *item : std::as_const(m_manual))
         manual.append(item->toJson());
 
+    QJsonArray hidden;
+    for (const QString &id : std::as_const(m_hidden))
+        hidden.append(id);
+
     QJsonObject root;
     root.insert(QStringLiteral("version"), 1);
     root.insert(QStringLiteral("manual"), manual);
+    root.insert(QStringLiteral("hidden"), hidden);
 
     const QString path = layoutPath();
     QDir().mkpath(QFileInfo(path).absolutePath());

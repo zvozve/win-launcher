@@ -235,8 +235,8 @@ int main(int argc, char *argv[])
             const bool isExe = a.target.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive);
             if (!isExe)
                 ++nonExe;
-            ts << (isExe ? "exe  " : "other") << '\t' << a.name << '\t' << a.target << '\t'
-               << a.sourcePath << '\n';
+            ts << (isExe ? "exe  " : "other") << '\t' << a.category << '\t' << a.name << '\t'
+               << a.target << '\t' << a.sourcePath << '\n';
         }
         ts.flush();
         out.close();
