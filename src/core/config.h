@@ -1,0 +1,81 @@
+#pragma once
+
+#include <QJsonObject>
+#include <QObject>
+#include <QString>
+
+/*
+ * 配置中心：全部落在 %APPDATA%/WinLauncher/config.json。
+ * 面板/编辑界面直接绑属性，改动即时保存。
+ */
+class Config : public QObject
+{
+    Q_OBJECT
+
+    Q_PROPERTY(QString hotkey READ hotkey WRITE setHotkey NOTIFY hotkeyChanged)
+    Q_PROPERTY(bool autostart READ autostart WRITE setAutostart NOTIFY autostartChanged)
+    Q_PROPERTY(bool hideOnFocusOut READ hideOnFocusOut WRITE setHideOnFocusOut
+                   NOTIFY hideOnFocusOutChanged)
+    Q_PROPERTY(bool includeRegistry READ includeRegistry WRITE setIncludeRegistry
+                   NOTIFY includeRegistryChanged)
+    Q_PROPERTY(QString searchSource READ searchSource WRITE setSearchSource NOTIFY searchSourceChanged)
+    Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY darkModeChanged)
+    Q_PROPERTY(bool followSystemTheme READ followSystemTheme WRITE setFollowSystemTheme
+                   NOTIFY followSystemThemeChanged)
+    Q_PROPERTY(int gridColumns READ gridColumns WRITE setGridColumns NOTIFY gridColumnsChanged)
+    Q_PROPERTY(QString configPath READ configPath CONSTANT)
+
+public:
+    explicit Config(QObject *parent = nullptr);
+
+    void load();
+
+    QString hotkey() const { return m_hotkey; }
+    bool autostart() const { return m_autostart; }
+    bool hideOnFocusOut() const { return m_hideOnFocusOut; }
+    bool includeRegistry() const { return m_includeRegistry; }
+    QString searchSource() const { return m_searchSource; }
+    bool darkMode() const { return m_darkMode; }
+    bool followSystemTheme() const { return m_followSystemTheme; }
+    int gridColumns() const { return m_gridColumns; }
+    QString configPath() const;
+
+    void setHotkey(const QString &v);
+    void setAutostart(bool v);
+    void setHideOnFocusOut(bool v);
+    void setIncludeRegistry(bool v);
+    void setSearchSource(const QString &v);
+    void setDarkMode(bool v);
+    void setFollowSystemTheme(bool v);
+    void setGridColumns(int v);
+
+    // 读注册表判断系统是否深色（AppsUseLightTheme == 0）
+    static bool systemUsesDarkMode();
+    static bool isAutostartEnabled();
+    static void setAutostartEnabled(bool on);
+
+    QJsonObject toJson() const;
+    void save();
+
+signals:
+    void hotkeyChanged();
+    void autostartChanged();
+    void hideOnFocusOutChanged();
+    void includeRegistryChanged();
+    void searchSourceChanged();
+    void darkModeChanged();
+    void followSystemThemeChanged();
+    void gridColumnsChanged();
+
+private:
+    void syncDarkMode();
+
+    QString m_hotkey;
+    bool m_autostart = false;
+    bool m_hideOnFocusOut = true;
+    bool m_includeRegistry = true;
+    QString m_searchSource = QStringLiteral("local");
+    bool m_darkMode = false;
+    bool m_followSystemTheme = true;
+    int m_gridColumns = 7;
+};

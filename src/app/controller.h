@@ -1,0 +1,140 @@
+#pragma once
+
+#include <QList>
+#include <QObject>
+#include <QString>
+#include <QUrl>
+
+#include "core/appscanner.h"
+
+// 属性里用到 Config* / EverythingSearch*，元类型要求类型完整，不能只前置声明
+#include "core/config.h"
+#include "core/everythingsearch.h"
+
+class AppItem;
+class HotkeyManager;
+class LauncherWindow;
+class QTimer;
+
+/*
+ * 前后端唯一的门面（QML 里叫 Ctrl）。
+ *
+ * 职责：
+ *   - 持有应用列表、当前搜索词、过滤结果
+ *   - 驱动扫描（GUI 线程分片执行，见 AppScanner 注释）
+ *   - 承接编辑界面的增删改
+ *   - 把热键 / 托盘的动作广播给 QML
+ * QML 不直接碰 core 里的类，全部走这里。
+ */
+class Controller : public QObject
+{
+    Q_OBJECT
+
+    Q_PROPERTY(QList<QObject *> apps READ apps NOTIFY appsChanged)
+    Q_PROPERTY(QList<QObject *> visibleApps READ visibleApps NOTIFY visibleAppsChanged)
+    Q_PROPERTY(QList<QObject *> manualApps READ manualApps NOTIFY manualAppsChanged)
+    Q_PROPERTY(QList<QObject *> searchResults READ searchResults NOTIFY searchResultsChanged)
+    Q_PROPERTY(QString query READ query WRITE setQuery NOTIFY queryChanged)
+    Q_PROPERTY(int totalCount READ totalCount NOTIFY appsChanged)
+    Q_PROPERTY(int matchCount READ matchCount NOTIFY visibleAppsChanged)
+    Q_PROPERTY(bool scanning READ scanning NOTIFY scanningChanged)
+    Q_PROPERTY(int scanProgress READ scanProgress NOTIFY scanProgressChanged)
+    Q_PROPERTY(int scanTotal READ scanTotal NOTIFY scanProgressChanged)
+    Q_PROPERTY(QString statusText READ statusText NOTIFY statusTextChanged)
+    Q_PROPERTY(QString errorText READ errorText NOTIFY errorTextChanged)
+    Q_PROPERTY(Config *config READ config CONSTANT)
+    Q_PROPERTY(EverythingSearch *everything READ everything CONSTANT)
+    Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
+    Q_PROPERTY(bool autoStartLaunch READ autoStartLaunch CONSTANT)
+
+public:
+    explicit Controller(Config *config, EverythingSearch *everything, QObject *parent = nullptr);
+
+    void attachWindow(LauncherWindow *window);
+    void attachHotkeys(HotkeyManager *hotkeys);
+
+    // ---- QML 可调用 ----
+    Q_INVOKABLE void rescan();
+    Q_INVOKABLE void launchItem(QObject *item);
+    Q_INVOKABLE bool addPaths(const QList<QUrl> &urls);
+    Q_INVOKABLE void removeApp(const QString &id);
+    Q_INVOKABLE void toggleFavorite(const QString &id);
+    Q_INVOKABLE void moveApp(int from, int to);
+    Q_INVOKABLE void openConfigFolder();
+    Q_INVOKABLE void clearCacheAndRescan();
+    Q_INVOKABLE void requestQuit();
+    Q_INVOKABLE void notifyError(const QString &text);
+    Q_INVOKABLE bool setHotkey(const QString &sequence);
+
+    // ---- getters ----
+    QList<QObject *> apps() const { return m_apps; }
+    QList<QObject *> visibleApps() const { return m_visible; }
+    QList<QObject *> manualApps() const;
+    QList<QObject *> searchResults() const { return m_searchResults; }
+    QString query() const { return m_query; }
+    int totalCount() const { return m_apps.size(); }
+    int matchCount() const { return m_visible.size(); }
+    bool scanning() const { return m_scanning; }
+    int scanProgress() const { return m_scanIndex; }
+    int scanTotal() const { return m_scanTasks.size(); }
+    QString statusText() const { return m_status; }
+    QString errorText() const { return m_error; }
+    Config *config() const { return m_config; }
+    EverythingSearch *everything() const { return m_everything; }
+    static QString appVersion();
+    bool autoStartLaunch() const;
+
+    void setQuery(const QString &q);
+
+signals:
+    void appsChanged();
+    void visibleAppsChanged();
+    void manualAppsChanged();
+    void searchResultsChanged();
+    void queryChanged();
+    void scanningChanged();
+    void scanProgressChanged();
+    void statusTextChanged();
+    void errorTextChanged();
+
+    // 给 QML 的「外部触发」信号（托盘 / 热键）
+    void showPanelRequested();
+    void editRequested();
+
+public slots:
+    void togglePanel();
+
+private slots:
+    void onHotkeyActivated();
+    void processScanChunk();
+
+private:
+    void beginScan();
+    void finishScan();
+    void rebuildVisible();
+    void setStatus(const QString &text);
+    void setError(const QString &text);
+    bool loadManualApps();
+    void saveManualApps();
+
+    Config *m_config = nullptr;
+    EverythingSearch *m_everything = nullptr;
+    LauncherWindow *m_window = nullptr;
+    HotkeyManager *m_hotkeys = nullptr;
+    QTimer *m_searchDebounce = nullptr;
+
+    QList<AppItem *> m_all;      // 扫描得到的（不含手动项）
+    QList<AppItem *> m_manual;   // 用户拖入/手工添加的
+    QList<QObject *> m_apps;     // 合并后的完整列表
+    QList<QObject *> m_visible;  // 搜索过滤后
+    QList<QObject *> m_searchResults;
+
+    QList<AppScanner::Task> m_scanTasks;
+    QList<ScannedApp> m_scanBuffer;
+    int m_scanIndex = 0;
+
+    QString m_query;
+    QString m_status;
+    QString m_error;
+    bool m_scanning = false;
+};
