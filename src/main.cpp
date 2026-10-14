@@ -108,7 +108,11 @@ int main(int argc, char *argv[])
     wlTrace("COM ready");
 
     // ---- 单实例：已有实例则通知它弹出面板后退出 ---------------------------
-    {
+    // 诊断参数（--test-everything）不参与单实例协商：否则托盘里已经常驻一个实例时，
+    // 自检会在这里被静默吞掉，什么都不打印，看起来像"跑不起来"。
+    const bool diagnosticRun = app.arguments().contains(QStringLiteral("--test-everything"));
+
+    if (!diagnosticRun) {
         QLocalSocket probe;
         probe.connectToServer(kPipeName);
         if (probe.waitForConnected(300)) {
@@ -121,7 +125,7 @@ int main(int argc, char *argv[])
     }
 
     QLocalServer server;
-    if (!server.listen(kPipeName))
+    if (!diagnosticRun && !server.listen(kPipeName))
         qWarning("单实例管道监听失败：%s", qPrintable(server.errorString()));
 
     // ---- 核心对象（先不扫描：扫描线程会碰 Shell/COM，必须等引擎与窗口就绪）----
