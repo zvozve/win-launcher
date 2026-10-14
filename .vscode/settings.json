@@ -1,0 +1,24 @@
+{
+  // ---- 本机覆盖：全局 settings.json 把 cmake.generator 钉死成 MinGW Makefiles，
+  //      那是给 MinGW 项目用的，会让 CMake Tools 隐藏所有 MSVC / Ninja kit。
+  "cmake.generator": "Ninja",
+  "cmake.cmakePath": "C:/Container/System/Library/QT/Tools/CMake_64/bin/cmake.exe",
+  "cmake.sourceDirectory": "${workspaceFolder}",
+  // Ninja 是单配置生成器：每个配置一个目录，正好对齐 scripts/build.bat 的产物布局
+  "cmake.buildDirectory": "${workspaceFolder}/build/${buildType}",
+  "cmake.configureSettings": {
+    "CMAKE_PREFIX_PATH": "C:/Container/System/Library/QT/6.8.3/msvc2022_64"
+  },
+  "cmake.configureOnOpen": true,
+  "cmake.copyCompileCommands": "${workspaceFolder}/build/compile_commands.json",
+
+  // ---- Qt 扩展：Qt 装在非默认根目录（不是 C:/Qt），必须显式登记，否则 kit 列表是空的
+  "qt-core.qtInstallationRoot": "C:/Container/System/Library/QT",
+  "qt-core.additionalQtPaths": [
+    "C:/Container/System/Library/QT/6.8.3/msvc2022_64/bin/qtpaths.exe"
+  ],
+
+  "files.associations": {
+    "*.qml": "qml"
+  }
+}

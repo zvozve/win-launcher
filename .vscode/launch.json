@@ -1,0 +1,37 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "WinLauncher (Debug)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/WinLauncher.exe",
+      "args": ["--trace"],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/Container/System/Library/QT/6.8.3/msvc2022_64/bin;${env:PATH}"
+        }
+      ],
+      "console": "integratedTerminal",
+      "stopAtEntry": false
+    },
+    {
+      "name": "WinLauncher (Release)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Release/WinLauncher.exe",
+      "args": ["--trace"],
+      "cwd": "${workspaceFolder}/build/Release",
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/Container/System/Library/QT/6.8.3/msvc2022_64/bin;${env:PATH}"
+        }
+      ],
+      "console": "integratedTerminal",
+      "stopAtEntry": false
+    }
+  ]
+}

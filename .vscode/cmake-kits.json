@@ -1,0 +1,21 @@
+[
+  {
+    "name": "MSVC 2022 BuildTools amd64 + Ninja",
+    "visualStudio": "2dc960a9",
+    "visualStudioArchitecture": "x64",
+    "preferredGenerator": {
+      "name": "Ninja"
+    }
+  },
+  {
+    "name": "MSVC 2022 BuildTools amd64 + Ninja Multi-Config",
+    "visualStudio": "2dc960a9",
+    "visualStudioArchitecture": "x64",
+    "preferredGenerator": {
+      "name": "Ninja Multi-Config"
+    },
+    "cmakeSettings": {
+      "CMAKE_CONFIGURATION_TYPES": "Debug;Release;RelWithDebInfo"
+    }
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build: Debug",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/build.bat",
+      "args": ["Debug"],
+      "problemMatcher": ["$msCompile"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "build: Release",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/build.bat",
+      "args": ["Release"],
+      "problemMatcher": ["$msCompile"],
+      "group": "build"
+    },
+    {
+      "label": "run: Debug",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/run.bat",
+      "args": ["Debug", "--trace"],
+      "dependsOn": "build: Debug",
+      "problemMatcher": []
+    },
+    {
+      "label": "clean: build 目录",
+      "type": "shell",
+      "command": "cmd",
+      "args": ["/c", "if exist \"${workspaceFolder}\\build\" rmdir /s /q \"${workspaceFolder}\\build\""],
+      "problemMatcher": []
+    }
+  ]
+}

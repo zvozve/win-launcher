@@ -9,7 +9,11 @@ bool g_enabled = false;
 
 QString tracePath()
 {
-    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("winlauncher.trace"));
+    // --trace 在 QApplication 构造之前就可能开始打点，此时 applicationDirPath()
+    // 还是空的（并会打印一条警告），退回当前工作目录。
+    const QString dir = QCoreApplication::instance() ? QCoreApplication::applicationDirPath()
+                                                     : QDir::currentPath();
+    return QDir(dir).filePath(QStringLiteral("winlauncher.trace"));
 }
 } // namespace
 
