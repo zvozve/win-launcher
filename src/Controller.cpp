@@ -22,6 +22,7 @@
 
 #include "AppItem.h"
 #include "AppCategory.h"
+#include "AppUninstaller.h"
 #include "BackdropBlur.h"
 #include "BackdropProvider.h"
 #include "DebugTrace.h"
@@ -606,6 +607,32 @@ void Controller::unhideAll()
     rebuildVisible();
     emit hiddenCountChanged();
     setStatus(QStringLiteral("已恢复 %1 个图标").arg(n));
+}
+
+void Controller::uninstallApp(QObject *obj)
+{
+    auto *item = qobject_cast<AppItem *>(obj);
+    if (!item)
+        return;
+
+    const AppUninstaller::Entry entry = AppUninstaller::findFor(item);
+    if (!entry.isValid()) {
+        setError(QStringLiteral("没找到「%1」的卸载入口（绿色软件和商店应用没有）")
+                     .arg(item->name()));
+        return;
+    }
+
+    QString error;
+    if (!AppUninstaller::run(entry, &error)) {
+        setError(QStringLiteral("卸载失败：%1").arg(error));
+        return;
+    }
+
+    setError(QString());
+    setStatus(QStringLiteral("正在卸载 %1…卸完记得「重新扫描」清掉图标")
+                  .arg(entry.displayName.isEmpty() ? item->name() : entry.displayName));
+    if (m_window)
+        m_window->hidePanel();
 }
 
 void Controller::openConfigFolder()

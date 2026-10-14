@@ -19,6 +19,7 @@ Item {
     signal activated()
     signal adminRequested()
     signal revealRequested()
+    signal uninstallRequested()
     signal removeRequested()
 
     readonly property bool hasIcon: app !== null && image.status === Image.Ready
@@ -83,6 +84,20 @@ Item {
         MenuItem {
             text: qsTr("打开文件所在位置")
             onTriggered: root.revealRequested()
+        }
+
+        MenuSeparator {
+            contentItem: Rectangle {
+                implicitWidth: 164
+                implicitHeight: 1
+                color: root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+            }
+        }
+
+        // 省略号表示会再开一个窗口（软件自己的卸载向导）
+        MenuItem {
+            text: qsTr("卸载此程序…")
+            onTriggered: root.uninstallRequested()
         }
 
         MenuSeparator {

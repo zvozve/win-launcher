@@ -94,6 +94,12 @@ public:
      */
     Q_INVOKABLE void hideApp(QObject *item);
     Q_INVOKABLE void unhideAll();
+    /*
+     * 「卸载此程序」：从注册表 Uninstall 键找这个条目对应的卸载项，执行它的
+     * UninstallString（剩下的交给软件自己的卸载向导）。
+     * 找不到卸载项时只是提示，不会去强删文件 —— 强删是另一码事，风险大得多。
+     */
+    Q_INVOKABLE void uninstallApp(QObject *item);
 
     /*
      * 抓取窗口区域（物理像素，Win32 坐标）的桌面像素，模糊 + 裁圆角 + 烘外阴影后

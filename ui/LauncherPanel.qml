@@ -121,6 +121,7 @@ Item {
                 onActivated: root.launchRequested(app)
                 onAdminRequested: Ctrl.runAsAdmin(app)
                 onRevealRequested: Ctrl.revealInExplorer(app)
+                onUninstallRequested: Ctrl.uninstallApp(app)
                 onRemoveRequested: Ctrl.hideApp(app)
             }
 

@@ -49,6 +49,7 @@ add_executable(WinLauncher WIN32
     src/AppCategory.cpp
     src/AppItem.cpp
     src/AppScanner.cpp
+    src/AppUninstaller.cpp
     src/BackdropBlur.cpp
     src/BackdropProvider.cpp
     src/Config.cpp
@@ -66,6 +67,7 @@ add_executable(WinLauncher WIN32
     inc/AppCategory.h
     inc/AppItem.h
     inc/AppScanner.h
+    inc/AppUninstaller.h
     inc/BackdropBlur.h
     inc/BackdropProvider.h
     inc/Config.h

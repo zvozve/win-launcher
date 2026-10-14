@@ -18,7 +18,9 @@
 #include <cstdio>
 #include <QtGlobal>
 
+#include "AppItem.h"
 #include "AppScanner.h"
+#include "AppUninstaller.h"
 #include "Controller.h"
 #include "BackdropProvider.h"
 #include "Config.h"
@@ -148,7 +150,8 @@ int main(int argc, char *argv[])
     // 诊断参数（--test-everything）不参与单实例协商：否则托盘里已经常驻一个实例时，
     // 自检会在这里被静默吞掉，什么都不打印，看起来像"跑不起来"。
     const bool diagnosticRun = app.arguments().contains(QStringLiteral("--test-everything"))
-                               || app.arguments().contains(QStringLiteral("--dump-apps"));
+                               || app.arguments().contains(QStringLiteral("--dump-apps"))
+                               || app.arguments().contains(QStringLiteral("--test-uninstall"));
 
     if (!diagnosticRun) {
         QLocalSocket probe;
@@ -244,6 +247,44 @@ int main(int argc, char *argv[])
         report(QStringLiteral("tasks=%1 kept=%2 nonExe=%3").arg(tasks.size()).arg(kept).arg(nonExe));
         report(QStringLiteral("list: ") + outPath);
         return 0;
+    }
+
+    /*
+     * 自检：--test-uninstall <程序名或 exe 路径>
+     * 打印这个条目匹配到的注册表卸载项，用来核对「卸载此程序」的匹配逻辑。
+     * **不执行卸载**。
+     */
+    {
+        const QStringList a = app.arguments();
+        const int idx = a.indexOf(QStringLiteral("--test-uninstall"));
+        if (idx >= 0) {
+            attachParentConsole();
+            QFile::remove(diagnosticsPath());
+
+            const QString what = (idx + 1 < a.size()) ? a.at(idx + 1) : QString();
+            if (what.isEmpty()) {
+                report(QStringLiteral("usage: --test-uninstall <name-or-exe-path>"));
+            } else {
+                AppItem probe;
+                if (what.contains(QLatin1Char('\\')) || what.contains(QLatin1Char('/')))
+                    probe.setTarget(what);
+                else
+                    probe.setName(what);
+
+                const AppUninstaller::Entry e = AppUninstaller::findFor(&probe);
+                report(QStringLiteral("query       = %1").arg(what));
+                report(QStringLiteral("matched     = %1").arg(e.isValid() ? QStringLiteral("yes")
+                                                                        : QStringLiteral("no")));
+                if (e.isValid()) {
+                    report(QStringLiteral("key         = %1").arg(e.key));
+                    report(QStringLiteral("displayName = %1").arg(e.displayName));
+                    report(QStringLiteral("icon        = %1").arg(e.displayIcon));
+                    report(QStringLiteral("installLoc  = %1").arg(e.installLocation));
+                    report(QStringLiteral("uninstall   = %1").arg(e.uninstallString));
+                }
+            }
+            return 0;
+        }
     }
 
     HotkeyManager hotkeys;
