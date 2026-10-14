@@ -6,7 +6,9 @@
       "type": "cppvsdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/WinLauncher.exe",
-      "args": ["--trace"],
+      "args": [
+        "--trace"
+      ],
       "cwd": "${workspaceFolder}/build/Debug",
       "environment": [
         {
@@ -15,14 +17,17 @@
         }
       ],
       "console": "integratedTerminal",
-      "stopAtEntry": false
+      "stopAtEntry": false,
+      "visualizerFile": "c:\\Users\\USIDE\\AppData\\Roaming\\Code\\User\\workspaceStorage\\692d36b4189705b5ab08f6194da95ee1\\tonka3000.qtvsctools\\qt.natvis.xml"
     },
     {
       "name": "WinLauncher (Release)",
       "type": "cppvsdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Release/WinLauncher.exe",
-      "args": ["--trace"],
+      "args": [
+        "--trace"
+      ],
       "cwd": "${workspaceFolder}/build/Release",
       "environment": [
         {
@@ -31,7 +36,8 @@
         }
       ],
       "console": "integratedTerminal",
-      "stopAtEntry": false
+      "stopAtEntry": false,
+      "visualizerFile": "c:\\Users\\USIDE\\AppData\\Roaming\\Code\\User\\workspaceStorage\\692d36b4189705b5ab08f6194da95ee1\\tonka3000.qtvsctools\\qt.natvis.xml"
     }
   ]
 }

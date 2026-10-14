@@ -9,6 +9,8 @@
 #include <QQuickStyle>
 #include <QSystemTrayIcon>
 #include <QTimer>
+
+#include <cstdio>
 #include <QtGlobal>
 
 #include "app/controller.h"
@@ -127,6 +129,30 @@ int main(int argc, char *argv[])
     config.load();
 
     EverythingSearch everything;
+
+    // 自检：--test-everything <query>  直接查一次 Everything 索引后退出（不建窗口）
+    {
+        const QStringList testArgs = app.arguments();
+        const int idx = testArgs.indexOf(QStringLiteral("--test-everything"));
+        if (idx >= 0) {
+            const QString query = (idx + 1 < testArgs.size()) ? testArgs.at(idx + 1) : QString();
+            std::fprintf(stdout, "everything.available  = %s\n",
+                         everything.isAvailable() ? "true" : "false");
+            std::fprintf(stdout, "everything.loadedPath = %s\n",
+                         qPrintable(everything.loadedPath()));
+            if (!query.isEmpty()) {
+                const QStringList hits =
+                    everything.search(query, 20, QStringLiteral("exe;lnk;url"));
+                std::fprintf(stdout, "query=\"%s\"  hits=%d\n", qPrintable(query),
+                             static_cast<int>(hits.size()));
+                for (const QString &h : hits)
+                    std::fprintf(stdout, "  %s\n", qPrintable(h));
+            }
+            std::fflush(stdout);
+            return 0;
+        }
+    }
+
     HotkeyManager hotkeys;
     Controller controller(&config, &everything);
 

@@ -44,6 +44,18 @@ if errorlevel 1 goto :fail
 "%CMAKE_EXE%" --build "%BUILD%"
 if errorlevel 1 goto :fail
 
+rem Everything SDK DLL goes next to the exe so the full-disk search source works.
+set "ESDK=%PROJ%\third_party\everything\Everything64.dll"
+if not exist "%ESDK%" goto :no_esdk
+copy /y "%ESDK%" "%BUILD%\" >nul
+echo [build] copied Everything64.dll
+goto :built
+
+:no_esdk
+echo [build] note: third_party\everything\Everything64.dll missing
+echo [build]       run scripts\fetch-everything-sdk.bat to enable the full-disk search source
+
+:built
 echo [build] done: %BUILD%\WinLauncher.exe
 endlocal
 exit /b 0
@@ -65,5 +77,6 @@ exit /b 1
 
 :fail
 echo [build] FAILED
+echo [build] hint: 增量改了头文件后 qmltyperegistrar 偶尔会先失败一次，直接重跑一次 build.bat 即可
 endlocal
 exit /b 1

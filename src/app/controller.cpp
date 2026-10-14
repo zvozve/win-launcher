@@ -239,7 +239,9 @@ void Controller::rebuildVisible()
     QList<QObject *> extra;
     if (!needle.isEmpty() && m_config->searchSource() == QLatin1String("everything")
         && m_everything && m_everything->isAvailable()) {
-        const QStringList hits = m_everything->search(needle, 60);
+        // 只让索引返回可启动类型；具体类型集后续做成可选项（见 doc/2.方案设计.md F8）
+        const QStringList hits =
+            m_everything->search(needle, 60, QStringLiteral("exe;lnk;url;bat;cmd"));
         QSet<QString> known;
         for (QObject *obj : std::as_const(m_apps)) {
             if (auto *item = qobject_cast<AppItem *>(obj))

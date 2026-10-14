@@ -1,2 +1,5 @@
 build
 .workbuddy/
+
+# Everything SDK 二进制：由 scripts/fetch-everything-sdk.bat 拉取，不入库
+third_party/everything/*.dll
