@@ -104,8 +104,10 @@ void appendStartMenuTasks(const QString &root, QList<AppScanner::Task> *out)
     if (root.isEmpty())
         return;
 
+    // 只收 .lnk。.url 是「网站快捷方式」（官网 / 文档 / 支持论坛 / mailto），
+    // 开始菜单里每个软件都附带一堆，macOS 的启动台也不会把它们列出来。
     QDirIterator it(root,
-                    {QStringLiteral("*.lnk"), QStringLiteral("*.url")},
+                    {QStringLiteral("*.lnk")},
                     QDir::Files,
                     QDirIterator::Subdirectories);
     while (it.hasNext()) {
@@ -225,8 +227,11 @@ bool AppScanner::runTask(const Task &task, ScannedApp *out)
     app.sourcePath = fi.absoluteFilePath();
 
     if (ShortcutResolver::isUrlFile(task.path)) {
-        app.kind = AppItem::KindUrl;
-        app.target = info.target;
+        // 兜底：正常不会走到这里（buildTasks 阶段就不收 .url 了）。
+        // 留一条是因为手动拖入的 .url 也走 runTask —— 那种按「用户明确指定」处理会更合理，
+        // 但当前 UI 只允许拖 .lnk/.exe，所以先一并挡掉。
+        wlTrace(QStringLiteral("scan: skip url shortcut -> ") + task.path);
+        return false;
     } else if (info.valid) {
         // 目标不是可执行文件的（开始菜单里常见的「用户手册」指向 .pdf / .chm / .txt），
         // 收进来就是一个点了没反应的图标 —— 之前 PDF 混进列表就是这么来的。

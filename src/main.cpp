@@ -9,13 +9,16 @@
 #include <QPainter>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
+#include <QSet>
 #include <QSystemTrayIcon>
+#include <QTextStream>
 #include <QTimer>
 #include <QUrl>
 
 #include <cstdio>
 #include <QtGlobal>
 
+#include "AppScanner.h"
 #include "Controller.h"
 #include "BackdropProvider.h"
 #include "Config.h"
@@ -144,7 +147,8 @@ int main(int argc, char *argv[])
     // ---- 单实例：已有实例则通知它弹出面板后退出 ---------------------------
     // 诊断参数（--test-everything）不参与单实例协商：否则托盘里已经常驻一个实例时，
     // 自检会在这里被静默吞掉，什么都不打印，看起来像"跑不起来"。
-    const bool diagnosticRun = app.arguments().contains(QStringLiteral("--test-everything"));
+    const bool diagnosticRun = app.arguments().contains(QStringLiteral("--test-everything"))
+                               || app.arguments().contains(QStringLiteral("--dump-apps"));
 
     if (!diagnosticRun) {
         QLocalSocket probe;
@@ -192,6 +196,54 @@ int main(int argc, char *argv[])
             report(QStringLiteral("report file: ") + diagnosticsPath());
             return 0;
         }
+    }
+
+    /*
+     * 自检：--dump-apps  同步跑一遍扫描，把**最终收录**的清单写成文本
+     * （类型 / 名字 / 目标 / 来源），不建窗口。用来核对过滤规则到底留下了什么。
+     */
+    if (app.arguments().contains(QStringLiteral("--dump-apps"))) {
+        attachParentConsole();
+        QFile::remove(diagnosticsPath());
+
+        AppScanner::Options opt;
+        opt.startMenu = true;
+        opt.registry = config.includeRegistry();
+        opt.uwp = false;
+
+        const QList<AppScanner::Task> tasks = AppScanner::buildTasks(opt);
+        const QString outPath = QDir(QCoreApplication::applicationDirPath())
+                                    .filePath(QStringLiteral("winlauncher.apps.txt"));
+        QFile out(outPath);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            report(QStringLiteral("dump failed: ") + outPath);
+            return 0;
+        }
+
+        QTextStream ts(&out); // Qt 6 默认 UTF-8
+        QSet<QString> seen;   // 和 UI 一样按 seed 去重（多个 .lnk 可能指向同一个 exe）
+        int kept = 0;
+        int nonExe = 0;
+        for (const AppScanner::Task &t : tasks) {
+            ScannedApp a;
+            if (!AppScanner::runTask(t, &a))
+                continue;
+            if (seen.contains(a.seed))
+                continue;
+            seen.insert(a.seed);
+            ++kept;
+            const bool isExe = a.target.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive);
+            if (!isExe)
+                ++nonExe;
+            ts << (isExe ? "exe  " : "other") << '\t' << a.name << '\t' << a.target << '\t'
+               << a.sourcePath << '\n';
+        }
+        ts.flush();
+        out.close();
+
+        report(QStringLiteral("tasks=%1 kept=%2 nonExe=%3").arg(tasks.size()).arg(kept).arg(nonExe));
+        report(QStringLiteral("list: ") + outPath);
+        return 0;
     }
 
     HotkeyManager hotkeys;
