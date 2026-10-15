@@ -191,9 +191,13 @@ bool LauncherWindow::event(QEvent *event)
     }
 
     if (event->type() == QEvent::WindowDeactivate && m_hideOnFocusOut && isVisible()) {
-        // 焦点只是移交给我们自己的另一个窗口（编辑窗）时不收起
-        QWindow *active = QGuiApplication::focusWindow();
-        if (active != this)
+        /*
+         * 焦点离开主窗口时不要立刻收起：右键菜单 / 设置窗口 / ToolTip 都是本应用
+         * 自己的原生弹出窗口，弹出时会先让主窗口收到 WindowDeactivate，但
+         * QGuiApplication::applicationState() 仍然是 Qt::ApplicationActive。
+         * 只有应用整体失活（点桌面、Alt-Tab 到别的应用）时才隐藏。
+         */
+        if (QGuiApplication::applicationState() != Qt::ApplicationActive)
             hidePanel();
     }
 

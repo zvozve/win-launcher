@@ -14,7 +14,14 @@ Item {
     id: root
 
     property bool dark: true
-    property alias text: field.text
+    /*
+     * 搜索词。这里**不能**用 `property alias text: field.text`：
+     * alias 转发的是 TextField 自己的 changed 信号，而 alias 属性本身对外
+     * 只有「读」的能力，外部（LauncherPanel / Main）没法反过来清空它。
+     * 结果是「清空搜索栏」这类操作在别处做不了，只能靠面板重新弹出时重建。
+     * 改成普通 property 后，两边都能写，双向都通。
+     */
+    property string text: ""
     property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
     property color hintColor: dark ? "#8E8E93" : "#8A8A8E"
 
@@ -24,9 +31,29 @@ Item {
     implicitHeight: 38
 
     signal accepted()
+    /*
+     * 用户编辑文本（敲字 / 清空 / Esc）时发出。外部（LauncherPanel）收到后写
+     * Ctrl.query。注意不能在内部直接给 root.text 赋值来上报 —— root.text 被
+     * 外部绑定着（text: Ctrl.query），命令式赋值会**打断绑定**，之后外部复位
+     * （面板重开清空）就传不进来了。用信号上报 + 绑定回填，两个方向都不断。
+     */
+    signal textEdited(string value)
 
     function focusInput() {
         field.forceActiveFocus()
+    }
+
+    // 外部要清空就调这个（比直接改 text 多一步：把焦点还给输入框）
+    function clear() {
+        root.textEdited("")
+        field.forceActiveFocus()
+    }
+
+    onTextChanged: {
+        // root.text 变了（多半是外部绑定回填）同步进 TextField；
+        // 相等时不赋值，避免打断用户正在进行的输入/选中。
+        if (field.text !== root.text)
+            field.text = root.text
     }
 
     Rectangle {
@@ -106,11 +133,19 @@ Item {
                 leftPadding: 0
                 rightPadding: 0
 
+                // 用户敲键盘走这里往上报（信号，不改 root.text —— 那是绑定的地盘）；
+                // Ctrl.query 更新后绑定会把新值回填到 root.text → field.text，
+                // 相等时不会再触发赋值，不会自激。
+                onTextChanged: {
+                    if (text !== root.text)
+                        root.textEdited(text)
+                }
+
                 onAccepted: root.accepted()
 
                 Keys.onEscapePressed: (event) => {
                     if (field.text.length > 0) {
-                        field.text = ""
+                        root.clear()
                         event.accepted = true
                     } else {
                         event.accepted = false
@@ -141,10 +176,7 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        field.text = ""
-                        field.forceActiveFocus()
-                    }
+                    onClicked: root.clear()
                 }
             }
 

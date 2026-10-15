@@ -73,7 +73,10 @@ LauncherWindow {
     }
 
     onVisibleChanged: {
-        if (visible)
+        if (visible) {
+            // 先复位过滤条件再聚焦，顺序反了会把焦点丢掉（清空会重设 TextField）
+            panel.resetFilters()
             panel.focusSearch()
+        }
     }
 }

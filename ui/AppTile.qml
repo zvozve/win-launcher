@@ -32,35 +32,69 @@ Item {
     Menu {
         id: contextMenu
 
+        /*
+         * Win11 菜单项：高 32、圆角 4、hover 是淡灰高亮、文字 13px。
+         *
+         * 左右各留 4px 内边距（就是下面 background 里 anchors.margins 那 4）：
+         *   - 菜单项不能顶到容器边上，否则高亮块的直角会盖住容器的圆角，
+         *     表现就是「第一项/最后一项 hover 时圆角变直角」；
+         *   - 同时这 4px 也让文字有了呼吸空间，不会贴左边。
+         * 高亮块本身再给 4px 圆角，hover 时看到的是一个圆角小条，和 Win11 一致。
+         */
         delegate: MenuItem {
             id: menuEntry
 
-            implicitHeight: 30
-            implicitWidth: 164
+            implicitHeight: 32
+            implicitWidth: 176
 
             contentItem: Text {
                 text: menuEntry.text
-                font.pixelSize: 12
-                color: root.dark ? "#F2F2F7" : "#1C1C1E"
+                font.pixelSize: 13
+                color: root.dark ? "#FFFFFF" : "#1A1A1A"
                 verticalAlignment: Text.AlignVCenter
-                leftPadding: 12
+                // 与外层 4px 内边距叠加后，文字左边缘离菜单边框 12px
+                leftPadding: 8
+                rightPadding: 8
+                elide: Text.ElideRight
             }
 
             background: Rectangle {
-                radius: 6
+                anchors.fill: parent
+                anchors.margins: 4
+                radius: 4
                 color: menuEntry.highlighted
-                       ? (root.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.07))
+                       ? (root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06))
                        : "transparent"
+
+                Behavior on color {
+                    ColorAnimation { duration: 80 }
+                }
             }
         }
 
+        // Win11 菜单容器：圆角 8、近实色底、1px 淡边。
+        // 宽度写死 184（菜单项 176 + 两侧各 4 内缩）；高度量 contentItem 的
+        // 内容高（这个是可靠的）再加边框。别用 contentItem.implicitWidth ——
+        // Menu 的 contentItem 横向 implicitWidth 是 0，拿来算宽度菜单会缩没。
         background: Rectangle {
-            implicitWidth: 176
-            implicitHeight: 8 + contentItem.implicitHeight
-            radius: 10
-            color: root.dark ? Qt.rgba(0.15, 0.15, 0.17, 0.99) : Qt.rgba(1, 1, 1, 0.99)
+            implicitWidth: 184
+            implicitHeight: Math.max(32, (contentItem ? contentItem.implicitHeight : 0) + 2)
+            radius: 8
+            color: root.dark ? "#2C2C2C" : "#F9F9F9"
             border.width: 1
-            border.color: root.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
+            border.color: root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.10)
+        }
+
+        // 分隔线也内缩 4px，和菜单项的高亮块左右对齐
+        component MenuSep: MenuSeparator {
+            implicitHeight: 9
+
+            contentItem: Rectangle {
+                implicitWidth: 176
+                implicitHeight: 1
+                anchors.margins: 4
+                color: root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
+            }
         }
 
         MenuItem {
@@ -68,13 +102,7 @@ Item {
             onTriggered: root.activated()
         }
 
-        MenuSeparator {
-            contentItem: Rectangle {
-                implicitWidth: 164
-                implicitHeight: 1
-                color: root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
-            }
-        }
+        MenuSep {}
 
         MenuItem {
             text: qsTr("以管理员身份打开")
@@ -86,13 +114,7 @@ Item {
             onTriggered: root.revealRequested()
         }
 
-        MenuSeparator {
-            contentItem: Rectangle {
-                implicitWidth: 164
-                implicitHeight: 1
-                color: root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
-            }
-        }
+        MenuSep {}
 
         // 省略号表示会再开一个窗口（软件自己的卸载向导）
         MenuItem {
@@ -100,13 +122,7 @@ Item {
             onTriggered: root.uninstallRequested()
         }
 
-        MenuSeparator {
-            contentItem: Rectangle {
-                implicitWidth: 164
-                implicitHeight: 1
-                color: root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
-            }
-        }
+        MenuSep {}
 
         MenuItem {
             text: qsTr("从启动台移除")

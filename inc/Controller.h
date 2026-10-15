@@ -83,6 +83,11 @@ public:
     Q_INVOKABLE void requestQuit();
     Q_INVOKABLE void notifyError(const QString &text);
     Q_INVOKABLE bool setHotkey(const QString &sequence);
+    /*
+     * 强制重算一次可见列表。给 QML 在「面板复位」这类场景用：搜索词/分类都回到
+     * 默认值之后，即便值本身没变化也要重新过一次过滤，否则列表可能停在空状态。
+     */
+    Q_INVOKABLE void refreshVisible();
 
     // ---- 图标右键菜单 ----
     Q_INVOKABLE void runAsAdmin(QObject *item);       // 以管理员身份启动（弹 UAC）
@@ -100,6 +105,13 @@ public:
      * 找不到卸载项时只是提示，不会去强删文件 —— 强删是另一码事，风险大得多。
      */
     Q_INVOKABLE void uninstallApp(QObject *item);
+
+    /*
+     * 给独立窗口（设置窗口这类 frameless Window）加 Win11 那样的 8px 圆角。
+     * 只在 winId 之后就绪，所以 QML 要在 visible / 尺寸变化时调一次；
+     * 内部做了防重复连接，重复调没有副作用。
+     */
+    Q_INVOKABLE void roundWindow(QObject *window, qreal radius);
 
     /*
      * 抓取窗口区域（物理像素，Win32 坐标）的桌面像素，模糊 + 裁圆角 + 烘外阴影后

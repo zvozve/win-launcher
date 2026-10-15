@@ -17,6 +17,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QVariantMap>
+#include <QWindow>
 
 #include <utility>
 
@@ -63,6 +64,18 @@ Controller::Controller(Config *config, EverythingSearch *everything, QObject *pa
     m_searchDebounce->setSingleShot(true);
     m_searchDebounce->setInterval(140);
     connect(m_searchDebounce, &QTimer::timeout, this, &Controller::rebuildVisible);
+
+    /*
+     * 顶部分类标签点一下就改 AppConfig.appCategory —— 这是**运行时的界面状态**，
+     * 不是「下次启动才生效」的配置，所以必须立刻重算过滤结果。
+     *
+     * 这个连接放在构造函数里（在 attachWindow 之前），就是为了防止「先点分类、
+     * 后接信号」的窗口期。同理，searchCategory 换了也要重算：它同时决定本地
+     * 过滤的类型白名单和 Everything 的 ext: 参数。
+     */
+    connect(m_config, &Config::appCategoryChanged, this, &Controller::rebuildVisible);
+    connect(m_config, &Config::searchCategoryChanged, this, &Controller::rebuildVisible);
+    connect(m_config, &Config::searchSourceChanged, this, &Controller::rebuildVisible);
 
     loadLayout();
     rebuildVisible();
@@ -446,6 +459,20 @@ void Controller::setQuery(const QString &q)
     m_searchDebounce->start();
 }
 
+/*
+ * 外部（QML 面板复位时）强制重算一次可见列表。
+ *
+ * 为什么不复用 setQuery("")：那个函数在值没变时会直接 return，不触发重算；
+ * 面板复位的场景恰恰需要「值没变也重算一次」——比如某次过滤因为别的原因把
+ * 列表清空了，只改搜索词是救不回来的。
+ */
+void Controller::refreshVisible()
+{
+    // 停掉待触发的防抖，避免紧接着又来一次重复计算
+    m_searchDebounce->stop();
+    rebuildVisible();
+}
+
 QList<QObject *> Controller::manualApps() const
 {
     QList<QObject *> out;
@@ -633,6 +660,30 @@ void Controller::uninstallApp(QObject *obj)
                   .arg(entry.displayName.isEmpty() ? item->name() : entry.displayName));
     if (m_window)
         m_window->hidePanel();
+}
+
+void Controller::roundWindow(QObject *obj, qreal radius)
+{
+    auto *w = qobject_cast<QWindow *>(obj);
+    if (!w)
+        return;
+
+    const auto apply = [w, radius] {
+        if (!w->winId())
+            return;
+        const QScreen *scr = w->screen() ? w->screen() : QGuiApplication::primaryScreen();
+        const qreal dpr = scr ? scr->devicePixelRatio() : 1.0;
+        WindowEffects::setRoundedRegion(w->winId(), radius, dpr);
+    };
+
+    apply();
+
+    // 尺寸一变区域就失效了，自动跟着重裁（只接一次）
+    if (!w->property("_wlRoundedHooked").toBool()) {
+        w->setProperty("_wlRoundedHooked", true);
+        QObject::connect(w, &QWindow::widthChanged, w, apply);
+        QObject::connect(w, &QWindow::heightChanged, w, apply);
+    }
 }
 
 void Controller::openConfigFolder()

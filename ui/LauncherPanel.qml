@@ -40,6 +40,19 @@ Item {
         searchBar.focusInput()
     }
 
+    /*
+     * 面板每次弹出都从「干净状态」开始：清掉搜索词、分类回到「全部」。
+     * 不清的话，上次留下的搜索词会让面板一打开就只剩几个图标，看起来就像
+     * 「什么都没有了」——用户很难意识到是搜索词还在。
+     */
+    function resetFilters() {
+        Ctrl.query = ""
+        AppConfig.appCategory = "all"
+        // 值没变时上面两行不会触发重算，这里补一次强制的，
+        // 保证面板一打开看到的一定是完整列表
+        Ctrl.refreshVisible()
+    }
+
     GlassPanel {
         anchors.fill: parent
         dark: root.dark
@@ -66,7 +79,15 @@ Item {
                 dark: root.dark
                 textColor: root.textColor
                 hintColor: root.subTextColor
-                onTextChanged: Ctrl.query = text
+                /*
+                 * 两个方向：
+                 *   - text: Ctrl.query —— 外部复位（面板重开清空）回填输入框；
+                 *   - onTextEdited —— 用户敲字/清空上报给 Ctrl.query。
+                 * 之前只有「onTextChanged 往上报」一个方向，复位传不进来；
+                 * 现在用信号 + 绑定，谁也不会打断谁。
+                 */
+                text: Ctrl.query
+                onTextEdited: (value) => Ctrl.query = value
                 onAccepted: {
                     if (Ctrl.visibleApps.length > 0)
                         root.launchRequested(Ctrl.visibleApps[0])

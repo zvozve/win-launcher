@@ -8,6 +8,7 @@
         <file alias="qml/EditWindow.qml">../ui/EditWindow.qml</file>
         <file alias="qml/GlassPanel.qml">../ui/GlassPanel.qml</file>
         <file alias="qml/HotkeyRecorder.qml">../ui/HotkeyRecorder.qml</file>
+        <file alias="qml/WinButton.qml">../ui/WinButton.qml</file>
         <file alias="qml/LauncherPanel.qml">../ui/LauncherPanel.qml</file>
         <file alias="qml/Main.qml">../ui/Main.qml</file>
         <file alias="qml/PillButton.qml">../ui/PillButton.qml</file>
