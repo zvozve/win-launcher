@@ -23,22 +23,6 @@ LauncherWindow {
     property alias editWindow: editWindow
     property alias settingsWindow: settingsWindow
 
-    // [临时探针] QML 更新是否进 exe：正常应看到左上角一块红条
-    Rectangle {
-        width: 420
-        height: 46
-        color: "#FF0000"
-        z: 9999
-
-        Text {
-            anchors.centerIn: parent
-            text: "QML-PROBE-OK"
-            color: "#FFFFFF"
-            font.pixelSize: 22
-            font.bold: true
-        }
-    }
-
     // 玻璃底图。C++ 在 showAtCursor() 里、显示窗口**之前**抓屏生成，
     // 所以第一帧就有图。URL 尾巴上的 token 用来绕过 QML 的图片缓存。
     Image {

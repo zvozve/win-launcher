@@ -530,7 +530,20 @@ int main(int argc, char *argv[])
      * 不含窗口外框，但内容是准的）+ 逐格打印 Image.status/source。
      *
      * 只给自动化验证用，正常启动不走这条路。
+     *
+     * 追加的 --test-search <关键词>（配合 --dump-icons 一起用）：脚本化验证
+     * 「搜索有结果」+「清空后恢复全量」。直接调 Controller::setQuery，
+     * 不走键盘注入 —— 面板弹在真桌面上时，别的窗口一抢焦点面板就收了
+     * （hideOnFocusOut），靠 SendInput 敲字验证不稳。
      */
+    QString testTerm;
+    {
+        const QStringList args = app.arguments();
+        const int i = args.indexOf(QStringLiteral("--test-search"));
+        if (i >= 0 && i + 1 < args.size())
+            testTerm = args.at(i + 1);
+    }
+
     if (app.arguments().contains(QStringLiteral("--dump-icons"))) {
         /*
          * 面板是热键按下去才弹的，脚本按热键的时机对不齐，所以用
@@ -628,7 +641,10 @@ int main(int argc, char *argv[])
         // 打点全是 tiles=0（排查了半天，记在这儿）
         auto *poll = new QTimer(window);
         poll->setInterval(1200);
-        QObject::connect(poll, &QTimer::timeout, window, [window, grab, dumpState, dumpIcons] {
+        // 捕获 &controller / testTerm 是给下面的 --test-search 用的：
+        // 嵌套 lambda 无法访问外层 lambda 没捕获的东西（C3493）
+        QObject::connect(poll, &QTimer::timeout, window,
+                         [window, grab, dumpState, dumpIcons, &controller, testTerm] {
             const bool visible = window->isVisible();
             if (visible && !dumpState->property("sawVisible").toBool()) {
                 dumpState->setProperty("sawVisible", true);
@@ -672,62 +688,107 @@ int main(int argc, char *argv[])
                                     .arg(delay).arg(withSize).arg(labelOk).arg(first));
 
                         /*
-                         * 可视树 dump：walk 找不到 appTile 时用来判断
-                         *   「树里压根没有这个节点」还是「objectName 对不上」。
-                         * 只打有 objectName 的节点，层级用缩进表示。
+                         * 可视树 dump + 根探测：只在最后一条时间线（k==4，10s）打，
+                         * 否则 5 条时间线各刷 120 行，trace 会被淹掉。
+                         * 用途：判断「树里压根没这个节点」还是「objectName 对不上」，
+                         * 以及 contentItem() 走不下去时 QML 树到底挂在哪。
+                         * 定位「AppTile 拿到 0×0」就是靠这两条打点。
                          */
-                        QString tree;
-                        int nodes = 0;
-                        std::function<void(QQuickItem *, int)> dump = [&](QQuickItem *it, int depth) {
-                            if (!it || nodes > 120)
-                                return;
-                            const QString on = it->objectName();
-                            if (!on.isEmpty()) {
-                                ++nodes;
-                                tree += QStringLiteral("\n  %1%2[%3x%4] vis=%5")
-                                            .arg(QString(depth * 2, QLatin1Char(' ')))
-                                            .arg(on)
-                                            .arg(int(it->width()))
-                                            .arg(int(it->height()))
-                                            .arg(it->isVisible() ? 1 : 0);
-                            }
-                            const QList<QQuickItem *> kids = it->childItems();
-                            for (QQuickItem *kid : kids)
-                                dump(kid, on.isEmpty() ? depth : depth + 1);
-                        };
-                        dump(window->contentItem(), 0);
-                        wlTrace(QStringLiteral("tree +%1ms: named nodes=%2%3").arg(delay).arg(nodes).arg(tree));
+                        if (k == 4) {
+                            QString tree;
+                            int nodes = 0;
+                            std::function<void(QQuickItem *, int)> dump =
+                                [&](QQuickItem *it, int depth) {
+                                    if (!it || nodes > 120)
+                                        return;
+                                    const QString on = it->objectName();
+                                    if (!on.isEmpty()) {
+                                        ++nodes;
+                                        tree += QStringLiteral("\n  %1%2[%3x%4] vis=%5")
+                                                    .arg(QString(depth * 2, QLatin1Char(' ')))
+                                                    .arg(on)
+                                                    .arg(int(it->width()))
+                                                    .arg(int(it->height()))
+                                                    .arg(it->isVisible() ? 1 : 0);
+                                    }
+                                    const QList<QQuickItem *> kids = it->childItems();
+                                    for (QQuickItem *kid : kids)
+                                        dump(kid, on.isEmpty() ? depth : depth + 1);
+                                };
+                            dump(window->contentItem(), 0);
+                            wlTrace(QStringLiteral("tree +%1ms: named nodes=%2%3")
+                                        .arg(delay)
+                                        .arg(nodes)
+                                        .arg(tree));
 
-                        /*
-                         * 根探测：contentItem() 走不到 QML 树时，看看到底挂在哪。
-                         * findChildren 走的是 QObject 父子链，和可视树是两条路。
-                         */
-                        auto *ci = window->contentItem();
-                        const auto byObj = window->findChildren<QQuickItem *>();
-                        QString objNames;
-                        int objNamed = 0;
-                        for (QQuickItem *it : byObj) {
-                            if (it->objectName().isEmpty())
-                                continue;
-                            ++objNamed;
-                            if (objNamed <= 8)
-                                objNames += QStringLiteral(" %1[%2x%3]")
-                                                .arg(it->objectName())
-                                                .arg(int(it->width()))
-                                                .arg(int(it->height()));
-                        }
-                        wlTrace(QStringLiteral("root +%1ms: contentItem=%2 ciKids=%3 "
-                                               "windowKids=%4 qobjItems=%5 named=%6 |%7")
-                                    .arg(delay)
-                                    .arg(ci ? QStringLiteral("ok") : QStringLiteral("NULL"))
-                                    .arg(ci ? ci->childItems().size() : -1)
-                                    .arg(window->children().size())
-                                    .arg(byObj.size())
-                                    .arg(objNamed)
-                                    .arg(objNames));
-                        if (k == 4)
+                            auto *ci = window->contentItem();
+                            const auto byObj = window->findChildren<QQuickItem *>();
+                            QString objNames;
+                            int objNamed = 0;
+                            for (QQuickItem *it : byObj) {
+                                if (it->objectName().isEmpty())
+                                    continue;
+                                ++objNamed;
+                                if (objNamed <= 8)
+                                    objNames += QStringLiteral(" %1[%2x%3]")
+                                                    .arg(it->objectName())
+                                                    .arg(int(it->width()))
+                                                    .arg(int(it->height()));
+                            }
+                            wlTrace(QStringLiteral("root +%1ms: contentItem=%2 ciKids=%3 "
+                                                   "windowKids=%4 qobjItems=%5 named=%6 |%7")
+                                        .arg(delay)
+                                        .arg(ci ? QStringLiteral("ok") : QStringLiteral("NULL"))
+                                        .arg(ci ? ci->childItems().size() : -1)
+                                        .arg(window->children().size())
+                                        .arg(byObj.size())
+                                        .arg(objNamed)
+                                        .arg(objNames));
                             dumpIcons(QStringLiteral("-panel%1").arg(n));
+                        }
                     });
+                }
+
+                /*
+                 * --test-search：等扫描真正结束（total>0）再动手，否则
+                 * 「扫描中 → 全量 0」会把结果全打成 0，看不出对错。
+                 * 步进：0 等扫描 → 设关键词并打点；1 抓搜索结果图 + 清空；
+                 *       2 抓恢复图 + 打完退出。
+                 */
+                if (!testTerm.isEmpty()) {
+                    auto *seq = new QTimer(window);
+                    seq->setInterval(300);
+                    QObject::connect(seq, &QTimer::timeout, window,
+                                     [&controller, seq, grab, testTerm, step = 0]() mutable {
+                        if (step == 0) {
+                            if (controller.scanning() || controller.totalCount() == 0)
+                                return; // 扫描还没完，下一拍再看
+                            wlTrace(QStringLiteral("search-test: 扫描结束 total=%1")
+                                        .arg(controller.totalCount()));
+                            controller.setQuery(testTerm);
+                            wlTrace(QStringLiteral("search-test: 设关键词 '%1' -> match=%2")
+                                        .arg(testTerm)
+                                        .arg(controller.matchCount()));
+                            ++step;
+                            return;
+                        }
+                        if (step == 1) {
+                            grab(QStringLiteral("shot-search-%1.png").arg(testTerm));
+                            controller.setQuery(QString());
+                            wlTrace(QStringLiteral("search-test: 清空关键词 -> match=%1")
+                                        .arg(controller.matchCount()));
+                            ++step;
+                            return;
+                        }
+                        if (step == 2) {
+                            grab(QStringLiteral("shot-search-cleared.png"));
+                            wlTrace(QStringLiteral("search-test: 完成（清空后 match=%1）")
+                                        .arg(controller.matchCount()));
+                            seq->stop();
+                            seq->deleteLater();
+                        }
+                    });
+                    seq->start();
                 }
             } else if (!visible) {
                 dumpState->setProperty("sawVisible", false);

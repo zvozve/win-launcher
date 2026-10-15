@@ -188,9 +188,11 @@ Item {
         anchors.top: iconBox.bottom
         anchors.topMargin: 6
         anchors.horizontalCenter: parent.horizontalCenter
-        width: parent.width - 16
-        text: "W" + Math.round(root.width) + "x" + Math.round(root.height)
-        color: "#FF0000"
+        // 取 max(0,…)：瓦片宽度还没定下来时 parent.width 可能是 0，
+        // 负宽 Text 什么都不画（名字整行消失就是这么来的）
+        width: Math.max(0, parent.width - 16)
+        text: root.app ? root.app.name : ""
+        color: root.textColor
         font.pixelSize: 12
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap

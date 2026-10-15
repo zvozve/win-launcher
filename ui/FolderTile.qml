@@ -142,7 +142,8 @@ Item {
         anchors.top: boardBox.bottom
         anchors.topMargin: 6
         anchors.horizontalCenter: parent.horizontalCenter
-        width: parent.width - 16
+        // 同 AppTile：宽度没定下来时别算出负数（负宽 Text 不渲染）
+        width: Math.max(0, parent.width - 16)
         text: root.folder ? root.folder.label : ""
         color: root.textColor
         font.pixelSize: 12

@@ -214,10 +214,24 @@ Item {
              * （实测报 "ReferenceError: tileLoader is not defined" 然后整格空白）。
              * 两个都放着、用 visible 切换，虽然多养一个不可见的 item，
              * 但作用域直接就是 delegate 自己，没有坑。
+             *
+             * ★ 尺寸必须显式给：这个 delegate 根 Item 拿到的是 0×0
+             *   （实测 --dump-icons 的可视树里 `appTile[0x0]`），
+             *   `anchors.fill: parent` 于是把 0 传给了瓦片，后果是三连：
+             *     - iconSize 里 width*0.44 / height*0.42 全是 0 → 掉到 Math.max(32,…)
+             *       下限，图标只有 32px（本该 57px）
+             *     - tileLabel.width = parent.width - 16 = -16 → 负宽 Text 整行不渲染
+             *     - iconBox 以 parent.horizontalCenter(=0，即每格左边界)为圆心，
+             *       图标整体偏左半个图标宽
+             *   所以这里不用 implicitWidth，直接绑 cell 尺寸。
              */
             delegate: Item {
+                width: grid.cellWidth
+                height: grid.cellHeight
+
                 AppTile {
-                    anchors.fill: parent
+                    width: parent.width
+                    height: parent.height
                     visible: !(modelData && modelData.isFolder)
                     dark: root.dark
                     textColor: root.textColor
@@ -230,7 +244,8 @@ Item {
                 }
 
                 FolderTile {
-                    anchors.fill: parent
+                    width: parent.width
+                    height: parent.height
                     visible: modelData && modelData.isFolder
                     dark: root.dark
                     textColor: root.textColor
