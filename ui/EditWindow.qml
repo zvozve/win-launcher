@@ -7,21 +7,17 @@ import WinLauncher.Core
  * 编辑窗口（独立、不透明）：只负责图标的增删。
  * 设置项全部搬到 SettingsWindow —— 两者混在一起太长。
  * 支持把 .lnk / .exe / .url 直接拖进窗口添加。
+ *
+ * 配色统一走 Theme，和面板 / 设置窗口同一套。
  */
 Window {
     id: root
-
-    property bool dark: AppConfig.darkMode
-    readonly property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
-    readonly property color subTextColor: dark ? "#9A9AA0" : "#6E6E73"
-    readonly property color bgColor: dark ? "#232327" : "#F2F2F4"
-    readonly property color lineColor: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.08)
 
     width: 560
     height: 620
     visible: false
     title: qsTr("WinLauncher 编辑")
-    color: bgColor
+    color: Theme.bgWindow
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
 
     function openWindow() {
@@ -32,9 +28,9 @@ Window {
 
     Rectangle {
         anchors.fill: parent
-        color: root.bgColor
+        color: Theme.bgWindow
         border.width: 1
-        border.color: root.lineColor
+        border.color: Theme.border
     }
 
     // ---- 拖放添加 ----
@@ -67,8 +63,8 @@ Window {
                 anchors.leftMargin: 16
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("编辑图标")
-                color: root.textColor
-                font.pixelSize: 14
+                color: Theme.textHi
+                font.pixelSize: Theme.fsTitle
                 font.bold: true
             }
 
@@ -77,27 +73,29 @@ Window {
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("把 .lnk / .exe / .url 拖进窗口即可添加")
-                color: root.subTextColor
-                font.pixelSize: 11
+                color: Theme.textMid
+                font.pixelSize: Theme.fsSmall
             }
 
             Rectangle {
                 id: closeBtn
                 width: 26
                 height: 26
-                radius: 7
+                radius: Theme.rSm
                 anchors.right: parent.right
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                color: closeArea.containsMouse
-                       ? (root.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.09))
-                       : "transparent"
+                color: closeArea.containsMouse ? Theme.stateHover : "transparent"
+
+                Behavior on color {
+                    ColorAnimation { duration: Theme.durFast }
+                }
 
                 Text {
                     anchors.centerIn: parent
                     text: "✕"
-                    font.pixelSize: 11
-                    color: root.textColor
+                    font.pixelSize: Theme.fsSmall
+                    color: Theme.textHi
                 }
 
                 MouseArea {
@@ -113,7 +111,7 @@ Window {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: root.lineColor
+            color: Theme.divider
         }
 
         SectionTitle {
@@ -123,8 +121,6 @@ Window {
             Layout.fillWidth: true
             text: qsTr("应用（%1）").arg(Ctrl.totalCount)
             subText: qsTr("手动拖入的条目可移除；系统扫描来的条目请到源程序卸载")
-            textColor: root.textColor
-            subTextColor: root.subTextColor
         }
 
         // ---- 应用列表 ----
@@ -145,10 +141,8 @@ Window {
             delegate: Rectangle {
                 width: appList.width
                 height: 44
-                radius: 8
-                color: rowArea.containsMouse
-                       ? (root.dark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0, 0, 0, 0.045))
-                       : "transparent"
+                radius: Theme.rMd
+                color: rowArea.containsMouse ? Theme.stateIdle : "transparent"
 
                 RowLayout {
                     anchors.fill: parent
@@ -173,8 +167,8 @@ Window {
                             Layout.fillWidth: true
                             elide: Text.ElideRight
                             text: modelData ? modelData.name : ""
-                            color: root.textColor
-                            font.pixelSize: 12
+                            color: Theme.textHi
+                            font.pixelSize: Theme.fsBody
                         }
 
                         Text {
@@ -183,8 +177,8 @@ Window {
                             text: modelData && modelData.target.length > 0
                                   ? modelData.target
                                   : qsTr("（未解析到可执行目标）")
-                            color: root.subTextColor
-                            font.pixelSize: 10
+                            color: Theme.textMid
+                            font.pixelSize: Theme.fsTiny
                         }
                     }
 
@@ -192,16 +186,18 @@ Window {
                         visible: modelData ? modelData.removable : false
                         Layout.preferredWidth: 50
                         Layout.preferredHeight: 24
-                        radius: 6
-                        color: removeArea.containsMouse
-                               ? Qt.rgba(1, 0.35, 0.35, 0.22)
-                               : (root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
+                        radius: Theme.rSm
+                        color: removeArea.containsMouse ? Theme.errSoft : Theme.stateIdle
+
+                        Behavior on color {
+                            ColorAnimation { duration: Theme.durFast }
+                        }
 
                         Text {
                             anchors.centerIn: parent
                             text: qsTr("移除")
-                            font.pixelSize: 11
-                            color: root.textColor
+                            font.pixelSize: Theme.fsSmall
+                            color: removeArea.containsMouse ? Theme.err : Theme.textHi
                         }
 
                         MouseArea {
@@ -226,7 +222,7 @@ Window {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: root.lineColor
+            color: Theme.divider
         }
 
         RowLayout {
@@ -239,15 +235,11 @@ Window {
 
             PillButton {
                 text: qsTr("重新扫描")
-                dark: root.dark
-                textColor: root.textColor
                 onClicked: Ctrl.rescan()
             }
 
             PillButton {
                 text: qsTr("重建图标缓存")
-                dark: root.dark
-                textColor: root.textColor
                 onClicked: Ctrl.clearCacheAndRescan()
             }
 
@@ -255,8 +247,8 @@ Window {
 
             Text {
                 text: qsTr("设置请到「设置」窗口")
-                color: root.subTextColor
-                font.pixelSize: 11
+                color: Theme.textMid
+                font.pixelSize: Theme.fsSmall
             }
         }
     }

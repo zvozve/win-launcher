@@ -9,12 +9,12 @@ import WinLauncher.Core
  *
  * 用 Flickable 而不是 ScrollView：分类多的时候要能横向滑，但不需要滚动条和那一层
  * 控件开销。滚轮也接上了 —— 鼠标竖着滚就横向走。
+ *
+ * 胶囊配色走 Theme：选中 = 实心白胶囊 + 深色字（macOS 就是这样），
+ * 未选中只有一层很淡的底、**不描边** —— 满排十几个描边胶囊看着很碎。
  */
 Item {
     id: root
-
-    property bool dark: true
-    property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
 
     implicitHeight: 28
 
@@ -56,26 +56,24 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     radius: height / 2
 
-                    // 选中 = 实心胶囊（macOS 那边也是白底深字），未选中 = 很淡的底 + 细边
                     color: active
-                           ? (root.dark ? Qt.rgba(1, 1, 1, 0.92) : Qt.rgba(1, 1, 1, 0.96))
-                           : (hovered
-                              ? (root.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.07))
-                              : (root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.04)))
-                    border.width: active ? 0 : 1
-                    border.color: root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
+                           ? Theme.chipBgActive
+                           : (hovered ? Theme.chipBgHover : Theme.chipBg)
+                    // 浅色模式下白胶囊需要一层描边才看得出边界（深色下该值为 transparent）
+                    border.width: active ? 1 : 0
+                    border.color: Theme.chipBorderActive
 
                     Behavior on color {
-                        ColorAnimation { duration: 120 }
+                        ColorAnimation { duration: Theme.durBase }
                     }
 
                     Text {
                         id: labelText
                         anchors.centerIn: parent
                         text: modelData.label
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fsBody
                         font.weight: chip.active ? Font.DemiBold : Font.Normal
-                        color: chip.active ? "#1C1C1E" : root.textColor
+                        color: chip.active ? Theme.chipTextActive : Theme.textHi
                     }
 
                     MouseArea {

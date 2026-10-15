@@ -2,6 +2,11 @@
 <RCC version="1.0">
     <qresource prefix="/">
         <!-- QML 文件统一放 /qml/ 下, 引擎用 qrc:/qml/Main.qml 加载 -->
+        <!-- qmldir 必须一起打包：Theme 是 QML singleton，只有经 qmldir
+             声明的单例才生效（引擎不会自动把带 pragma Singleton 的文件
+             当单例用）。同目录其它 .qml 仍然按隐式目录导入正常解析。 -->
+        <file alias="qml/qmldir">qmldir</file>
+        <file alias="qml/Theme.qml">../ui/Theme.qml</file>
         <file alias="qml/AppTile.qml">../ui/AppTile.qml</file>
         <file alias="qml/CategoryBar.qml">../ui/CategoryBar.qml</file>
         <file alias="qml/CategorySelector.qml">../ui/CategorySelector.qml</file>
@@ -10,7 +15,10 @@
         <file alias="qml/GlassPanel.qml">../ui/GlassPanel.qml</file>
         <file alias="qml/HotkeyRecorder.qml">../ui/HotkeyRecorder.qml</file>
         <file alias="qml/WinButton.qml">../ui/WinButton.qml</file>
+        <file alias="qml/WinComboBox.qml">../ui/WinComboBox.qml</file>
         <file alias="qml/WinMenuItem.qml">../ui/WinMenuItem.qml</file>
+        <file alias="qml/WinSpinBox.qml">../ui/WinSpinBox.qml</file>
+        <file alias="qml/WinSwitch.qml">../ui/WinSwitch.qml</file>
         <file alias="qml/LauncherPanel.qml">../ui/LauncherPanel.qml</file>
         <file alias="qml/LayoutTest.qml">../ui/LayoutTest.qml</file>
         <file alias="qml/Main.qml">../ui/Main.qml</file>

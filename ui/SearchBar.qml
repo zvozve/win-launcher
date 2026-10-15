@@ -9,11 +9,12 @@ import WinLauncher.Core
  *
  * 类型选择器改的是 AppConfig.searchCategory，Controller 会同时用它做
  * 本地扩展名过滤和 Everything 的 ext: 过滤。
+ *
+ * 颜色全部走 Theme，不再需要 dark / textColor / hintColor 三个透传参数。
  */
 Item {
     id: root
 
-    property bool dark: true
     /*
      * 搜索词。这里**不能**用 `property alias text: field.text`：
      * alias 转发的是 TextField 自己的 changed 信号，而 alias 属性本身对外
@@ -22,8 +23,6 @@ Item {
      * 改成普通 property 后，两边都能写，双向都通。
      */
     property string text: ""
-    property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
-    property color hintColor: dark ? "#8E8E93" : "#8A8A8E"
 
     readonly property bool everythingReady: Ctrl.everything.available
     readonly property string source: AppConfig.searchSource
@@ -64,12 +63,11 @@ Item {
     Rectangle {
         id: box
         anchors.fill: parent
-        radius: 9
-        color: root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.05)
+        radius: Theme.rInput
+        color: Theme.bgInput
         border.width: 1
-        border.color: field.activeFocus
-                      ? Qt.rgba(0.04, 0.52, 1.0, 0.8)
-                      : Qt.rgba(0, 0, 0, 0)
+        // 聚焦环是强调色 —— 深浅模式共用一个蓝，和搜索源选中胶囊同色
+        border.color: field.activeFocus ? Theme.focusRing : "transparent"
 
         Behavior on border.color {
             ColorAnimation { duration: 110 }
@@ -86,16 +84,13 @@ Item {
                 id: category
                 Layout.preferredWidth: 78
                 Layout.preferredHeight: 26
-                dark: root.dark
-                textColor: root.textColor
-                hintColor: root.hintColor
             }
 
             // 分隔线
             Rectangle {
                 Layout.preferredWidth: 1
                 Layout.preferredHeight: 18
-                color: root.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
+                color: Theme.border
             }
 
             // ---- 放大镜（画出来，不依赖字体符号）----
@@ -109,14 +104,14 @@ Item {
                     radius: 5
                     color: "transparent"
                     border.width: 1.6
-                    border.color: root.hintColor
+                    border.color: Theme.textLo
                 }
 
                 Rectangle {
                     width: 1.6
                     height: 6
                     radius: 0.8
-                    color: root.hintColor
+                    color: Theme.textLo
                     x: 9
                     y: 9
                     rotation: -45
@@ -130,9 +125,9 @@ Item {
                 Layout.fillHeight: true
 
                 placeholderText: qsTr("搜索")
-                placeholderTextColor: root.hintColor
-                color: root.textColor
-                font.pixelSize: 14
+                placeholderTextColor: Theme.textLo
+                color: Theme.textHi
+                font.pixelSize: Theme.fsTitle
                 background: null
                 selectByMouse: true
                 leftPadding: 0
@@ -168,15 +163,13 @@ Item {
                 Layout.preferredHeight: 18
                 radius: 9
                 visible: field.text.length > 0
-                color: clearArea.containsMouse
-                       ? (root.dark ? Qt.rgba(1, 1, 1, 0.24) : Qt.rgba(0, 0, 0, 0.16))
-                       : (root.dark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.09))
+                color: clearArea.containsMouse ? Theme.stateHover : Theme.stateIdle
 
                 Text {
                     anchors.centerIn: parent
                     text: "✕"
                     font.pixelSize: 10
-                    color: root.textColor
+                    color: Theme.textHi
                 }
 
                 MouseArea {
@@ -205,18 +198,20 @@ Item {
 
                         width: 44
                         height: 22
-                        radius: 6
+                        radius: Theme.rSm
                         color: current
-                               ? Qt.rgba(0.04, 0.52, 1.0, 0.88)
-                               : (srcArea.containsMouse
-                                  ? (root.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.09))
-                                  : "transparent")
+                               ? Theme.accent
+                               : (srcArea.containsMouse ? Theme.stateHover : "transparent")
+
+                        Behavior on color {
+                            ColorAnimation { duration: Theme.durFast }
+                        }
 
                         Text {
                             anchors.centerIn: parent
                             text: modelData.label
-                            font.pixelSize: 11
-                            color: current ? "#FFFFFF" : root.hintColor
+                            font.pixelSize: Theme.fsSmall
+                            color: current ? Theme.accentText : Theme.textLo
                         }
 
                         MouseArea {

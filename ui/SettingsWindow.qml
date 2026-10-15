@@ -6,28 +6,22 @@ import WinLauncher.Core
 /*
  * 设置窗口（独立、不透明）。
  *
- * 外观按 Win11「设置」应用做：窗口底 #F3F3F3 / #202020，分组用 8px 圆角卡片，
- * 行高 56，控件用 WinButton / WinSwitch；标题栏右侧是 Win11 那种 hover 变红的关闭键。
+ * 外观按 Win11「设置」应用做：分组用圆角卡片、行高 56、控件用 WinButton / WinSwitch；
+ * 标题栏右侧是 Win11 那种 hover 变红的关闭键。
  * 只放设置项；图标增删在「编辑」窗口里，两者刻意分开 —— 混在一起太长。
+ *
+ * 但**配色不再单独一套**：改造前这里是 Win11 的 #202020 / #F3F3F3 / #0067C0，
+ * 和面板的 macOS 系配色并排放着像两个软件。现在统一走 Theme，
+ * 只保留 Win11 的几何形态（卡片圆角、行高、关闭键变红）。
  */
 Window {
     id: root
-
-    property bool dark: AppConfig.darkMode
-
-    // ---- Win11 配色 ----
-    readonly property color winBg: dark ? "#202020" : "#F3F3F3"
-    readonly property color cardBg: dark ? "#2B2B2B" : "#FBFBFB"
-    readonly property color cardBorder: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
-    readonly property color textColor: dark ? "#FFFFFF" : "#1A1A1A"
-    readonly property color subTextColor: dark ? "#C5C5C5" : "#5D5D5D"
-    readonly property color lineColor: dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.07)
 
     width: 500
     height: 700
     visible: false
     title: qsTr("WinLauncher 设置")
-    color: winBg
+    color: Theme.bgWindow
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
 
     function openWindow() {
@@ -48,10 +42,10 @@ Window {
         default property alias content: inner.data
 
         implicitHeight: inner.implicitHeight + 2
-        radius: 8
-        color: root.cardBg
+        radius: Theme.rMd
+        color: Theme.bgCard
         border.width: 1
-        border.color: root.cardBorder
+        border.color: Theme.border
 
         ColumnLayout {
             id: inner
@@ -69,7 +63,7 @@ Window {
         Layout.leftMargin: 20
         Layout.rightMargin: 20
         Layout.preferredHeight: 1
-        color: root.lineColor
+        color: Theme.divider
     }
 
     // 分组标题：上方留 18（和上一组拉开），下方留 8（贴近自己的卡片），左右 26
@@ -80,53 +74,18 @@ Window {
         Layout.fillWidth: true
         Layout.topMargin: 18
         Layout.bottomMargin: 8
-        color: root.subTextColor
-        font.pixelSize: 12
+        color: Theme.textMid
+        font.pixelSize: Theme.fsBody
         font.weight: Font.DemiBold
     }
 
-    // Win11 开关：胶囊 + 滑块，开=强调色。
-    // 只发信号不改自己的 checked —— 这样外部的绑定不会被内部赋值打断。
-    component WinSwitch: Rectangle {
-        property bool checked: false
-
-        signal toggled()
-
-        implicitWidth: 40
-        implicitHeight: 20
-        radius: height / 2
-        color: checked ? (root.dark ? "#4CC2FF" : "#0067C0")
-                       : (root.dark ? "#5A5A5A" : "#8A8A8A")
-
-        Behavior on color {
-            ColorAnimation { duration: 120 }
-        }
-
-        Rectangle {
-            width: 12
-            height: 12
-            radius: 6
-            anchors.verticalCenter: parent.verticalCenter
-            x: parent.checked ? parent.width - width - 4 : 4
-            color: parent.checked ? (root.dark ? "#000000" : "#FFFFFF") : "#FFFFFF"
-
-            Behavior on x {
-                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
-            }
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: parent.toggled()
-        }
-    }
+    // Win11 开关见 WinSwitch.qml（独立组件，配色只有 Theme 一个来源）
 
     // ================= 界面 =================
 
     Rectangle {
         anchors.fill: parent
-        color: root.winBg
+        color: Theme.bgWindow
     }
 
     ColumnLayout {
@@ -149,8 +108,8 @@ Window {
                 anchors.leftMargin: 16
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("设置")
-                color: root.textColor
-                font.pixelSize: 14
+                color: Theme.textHi
+                font.pixelSize: Theme.fsTitle
                 font.weight: Font.DemiBold
             }
 
@@ -159,17 +118,17 @@ Window {
                 width: 46
                 height: parent.height
                 anchors.right: parent.right
-                color: closeArea.containsMouse ? "#C42B1C" : "transparent"
+                color: closeArea.containsMouse ? Theme.closeHover : "transparent"
 
                 Behavior on color {
-                    ColorAnimation { duration: 90 }
+                    ColorAnimation { duration: Theme.durFast }
                 }
 
                 Text {
                     anchors.centerIn: parent
                     text: "\u2715"
                     font.pixelSize: 12
-                    color: closeArea.containsMouse ? "#FFFFFF" : root.textColor
+                    color: closeArea.containsMouse ? "#FFFFFF" : Theme.textHi
                 }
 
                 MouseArea {
@@ -207,14 +166,8 @@ Window {
                     SettingRow {
                         label: qsTr("全局热键")
                         hint: qsTr("点击后按下组合键；Esc 取消")
-                        textColor: root.textColor
-                        subTextColor: root.subTextColor
 
-                        HotkeyRecorder {
-                            dark: root.dark
-                            textColor: root.textColor
-                            subTextColor: root.subTextColor
-                        }
+                        HotkeyRecorder {}
                     }
 
                     Sep {}
@@ -222,8 +175,6 @@ Window {
                     SettingRow {
                         label: qsTr("开机自启")
                         hint: qsTr("写入 HKCU\\...\\Run，登录后静默常驻托盘")
-                        textColor: root.textColor
-                        subTextColor: root.subTextColor
 
                         WinSwitch {
                             checked: AppConfig.autostart
@@ -236,8 +187,6 @@ Window {
                     SettingRow {
                         label: qsTr("失去焦点自动收起")
                         hint: qsTr("关闭后面板会一直留在屏幕上")
-                        textColor: root.textColor
-                        subTextColor: root.subTextColor
 
                         WinSwitch {
                             checked: AppConfig.hideOnFocusOut
@@ -259,11 +208,8 @@ Window {
                         hint: Ctrl.everything.available
                               ? qsTr("Everything 已就绪：%1").arg(Ctrl.everything.loadedPath)
                               : qsTr("未检测到 Everything64.dll，仅本地过滤")
-                        textColor: root.textColor
-                        subTextColor: root.subTextColor
 
-                        ComboBox {
-                            implicitWidth: 130
+                        WinComboBox {
                             model: [qsTr("本地过滤"), qsTr("全盘（Everything）")]
                             currentIndex: AppConfig.searchSource === "everything" ? 1 : 0
                             onActivated: (index) => {
@@ -282,10 +228,8 @@ Window {
                     SettingRow {
                         label: qsTr("每行图标数")
                         hint: qsTr("当前 %1 列 × 4 行").arg(AppConfig.gridColumns)
-                        textColor: root.textColor
-                        subTextColor: root.subTextColor
 
-                        SpinBox {
+                        WinSpinBox {
                             from: 4
                             to: 16
                             value: AppConfig.gridColumns
@@ -298,10 +242,8 @@ Window {
                     SettingRow {
                         label: qsTr("归组阈值")
                         hint: qsTr("同一开始菜单文件夹里至少这么多条才折成一个文件夹")
-                        textColor: root.textColor
-                        subTextColor: root.subTextColor
 
-                        SpinBox {
+                        WinSpinBox {
                             from: 2
                             to: 12
                             value: AppConfig.groupThreshold
@@ -321,8 +263,6 @@ Window {
                     SettingRow {
                         label: qsTr("扫描注册表卸载项")
                         hint: qsTr("补上开始菜单里没有的免安装程序")
-                        textColor: root.textColor
-                        subTextColor: root.subTextColor
 
                         WinSwitch {
                             checked: AppConfig.includeRegistry
@@ -340,12 +280,9 @@ Window {
                         hint: Ctrl.hiddenCount > 0
                               ? qsTr("从启动台移除了 %1 个").arg(Ctrl.hiddenCount)
                               : qsTr("在图标上点右键可以移除")
-                        textColor: root.textColor
-                        subTextColor: root.subTextColor
 
                         WinButton {
                             text: qsTr("全部恢复")
-                            dark: root.dark
                             enabled: Ctrl.hiddenCount > 0
                             onClicked: Ctrl.unhideAll()
                         }
@@ -363,19 +300,16 @@ Window {
 
                     WinButton {
                         text: qsTr("重新扫描")
-                        dark: root.dark
                         onClicked: Ctrl.rescan()
                     }
 
                     WinButton {
                         text: qsTr("重建图标缓存")
-                        dark: root.dark
                         onClicked: Ctrl.clearCacheAndRescan()
                     }
 
                     WinButton {
                         text: qsTr("打开配置目录")
-                        dark: root.dark
                         onClicked: Ctrl.openConfigFolder()
                     }
 
@@ -383,8 +317,8 @@ Window {
 
                     Text {
                         text: qsTr("v%1").arg(Ctrl.appVersion)
-                        color: root.subTextColor
-                        font.pixelSize: 12
+                        color: Theme.textMid
+                        font.pixelSize: Theme.fsBody
                     }
                 }
             }

@@ -17,7 +17,8 @@ LauncherWindow {
     visible: false
     hideOnFocusOut: AppConfig.hideOnFocusOut
     darkBackdrop: AppConfig.darkMode
-    cornerRadius: 26
+    // 圆角半径的权威值在这里：C++ 抓屏裁圆角用的就是它（Theme.rPanel 同值）
+    cornerRadius: Theme.rPanel
 
     property alias panel: panel
     property alias editWindow: editWindow

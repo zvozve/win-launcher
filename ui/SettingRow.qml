@@ -9,14 +9,14 @@ import QtQuick.Layouts
  *
  * 左右内边距 20：Win11 官方是 16，但那个数字配的是 13px 字号；
  * 这里标签 14px、说明 12px，16 会显得挤，20 观感才对得上。
+ *
+ * 颜色走 Theme。
  */
 RowLayout {
     id: root
 
     property string label: ""
     property string hint: ""
-    property color textColor: "#FFFFFF"
-    property color subTextColor: "#C5C5C5"
 
     spacing: 16
     implicitHeight: hint.length > 30 ? 72 : 60
@@ -33,8 +33,8 @@ RowLayout {
         Text {
             Layout.fillWidth: true
             text: root.label
-            color: root.textColor
-            font.pixelSize: 14
+            color: Theme.textHi
+            font.pixelSize: Theme.fsTitle
             elide: Text.ElideRight
         }
 
@@ -42,8 +42,8 @@ RowLayout {
             Layout.fillWidth: true
             visible: root.hint.length > 0
             text: root.hint
-            color: root.subTextColor
-            font.pixelSize: 12
+            color: Theme.textMid
+            font.pixelSize: Theme.fsBody
             wrapMode: Text.WordWrap
             maximumLineCount: 2
             elide: Text.ElideRight
@@ -52,4 +52,3 @@ RowLayout {
         }
     }
 }
-

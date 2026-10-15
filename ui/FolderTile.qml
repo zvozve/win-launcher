@@ -10,13 +10,13 @@ import WinLauncher.Core
  *
  * 右键菜单是应用菜单的删减版 —— 文件夹没有单一 target，
  * 所以「以管理员打开 / 打开文件所在位置 / 卸载」这几个跟目标绑定的动作不适用。
+ *
+ * 颜色全部走 Theme。
  */
 Item {
     id: root
 
     property var folder: null
-    property bool dark: true
-    property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
 
     signal activated()
 
@@ -30,23 +30,20 @@ Item {
     Menu {
         id: contextMenu
 
-        delegate: WinMenuItem {
-            dark: root.dark
-        }
+        delegate: WinMenuItem {}
 
         background: Rectangle {
             implicitWidth: 196
             implicitHeight: Math.max(32, (contentItem ? contentItem.implicitHeight : 0) + 2)
-            radius: 8
-            color: root.dark ? "#2C2C2C" : "#F9F9F9"
+            radius: Theme.rMd
+            color: Theme.bgMenu
             border.width: 1
-            border.color: root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.10)
+            border.color: Theme.border
         }
 
         WinMenuItem {
             text: qsTr("打开文件夹")
             iconGlyph: String.fromCharCode(UiFont.Reveal)
-            dark: root.dark
             onTriggered: root.activated()
         }
     }
@@ -55,17 +52,13 @@ Item {
     Rectangle {
         anchors.fill: parent
         anchors.margins: 4
-        radius: 10
-        color: area.containsMouse
-               ? (root.dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.10))
-               : "transparent"
+        radius: Theme.rLg
+        color: area.containsMouse ? Theme.tileHover : "transparent"
         border.width: 1
-        border.color: area.containsMouse
-                      ? (root.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.08))
-                      : "transparent"
+        border.color: area.containsMouse ? Theme.tileHoverBorder : "transparent"
 
         Behavior on color {
-            ColorAnimation { duration: 90 }
+            ColorAnimation { duration: Theme.durFast }
         }
     }
 
@@ -84,9 +77,9 @@ Item {
         Rectangle {
             anchors.fill: parent
             radius: Math.round(root.board * 0.22)
-            color: root.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.55)
+            color: Theme.folderBoard
             border.width: 1
-            border.color: root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
+            border.color: Theme.folderBoardBorder
 
             // 2×2 预览：members 少于 4 个时右下留空，不补图标
             Column {
@@ -145,8 +138,8 @@ Item {
         // 同 AppTile：宽度没定下来时别算出负数（负宽 Text 不渲染）
         width: Math.max(0, parent.width - 16)
         text: root.folder ? root.folder.label : ""
-        color: root.textColor
-        font.pixelSize: 12
+        color: Theme.textHi
+        font.pixelSize: Theme.fsBody
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
         maximumLineCount: 2
@@ -171,6 +164,6 @@ Item {
 
     scale: area.pressed ? 0.94 : 1.0
     Behavior on scale {
-        NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: Theme.durFast; easing.type: Easing.OutCubic }
     }
 }

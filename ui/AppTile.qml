@@ -4,11 +4,13 @@ import WinLauncher.Core
 
 /*
  * 网格里的单个应用图标。
- * 尺寸由 GridView 的 cellWidth/cellHeight 决定，内容用居中 Column 排：
+ * 尺寸由 GridView 的 cellWidth/cellHeight 决定，内容用显式锚点排：
  *   悬停背景框（整格）+ 图标 + 名称
  *
  * 右键菜单：打开 / 以管理员身份打开 / 打开文件所在位置 / 从启动台移除。
  * 这里只发信号，真正的动作在 Controller（LauncherPanel 负责连起来）。
+ *
+ * 颜色全部走 Theme，不再需要 dark / textColor 参数。
  */
 Item {
     id: root
@@ -18,8 +20,6 @@ Item {
     readonly property string appName: app ? app.name : ""
 
     property var app: null
-    property bool dark: true
-    property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
 
     signal activated()
     signal adminRequested()
@@ -42,9 +42,7 @@ Item {
          * 图标是 Segoe Fluent Icons 的字形 —— 本机没这个字体时
          * UiFont.menuIconsAvailable 为 false，图标自动收起，只剩文字。
          */
-        delegate: WinMenuItem {
-            dark: root.dark
-        }
+        delegate: WinMenuItem {}
 
         // Win11 菜单容器：圆角 8、近实色底、1px 淡边。
         // 宽度写死 196（菜单项 188 + 两侧各 4 内缩）；高度量 contentItem 的
@@ -53,10 +51,10 @@ Item {
         background: Rectangle {
             implicitWidth: 196
             implicitHeight: Math.max(32, (contentItem ? contentItem.implicitHeight : 0) + 2)
-            radius: 8
-            color: root.dark ? "#2C2C2C" : "#F9F9F9"
+            radius: Theme.rMd
+            color: Theme.bgMenu
             border.width: 1
-            border.color: root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.10)
+            border.color: Theme.border
         }
 
         // 分隔线也内缩 4px，和菜单项的高亮块左右对齐
@@ -67,14 +65,13 @@ Item {
                 implicitWidth: 188
                 implicitHeight: 1
                 anchors.margins: 4
-                color: root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
+                color: Theme.divider
             }
         }
 
         WinMenuItem {
             text: qsTr("打开")
             iconGlyph: String.fromCharCode(UiFont.Open)
-            dark: root.dark
             onTriggered: root.activated()
         }
 
@@ -83,14 +80,12 @@ Item {
         WinMenuItem {
             text: qsTr("以管理员身份打开")
             iconGlyph: String.fromCharCode(UiFont.Admin)
-            dark: root.dark
             onTriggered: root.adminRequested()
         }
 
         WinMenuItem {
             text: qsTr("打开文件所在位置")
             iconGlyph: String.fromCharCode(UiFont.Reveal)
-            dark: root.dark
             onTriggered: root.revealRequested()
         }
 
@@ -100,7 +95,6 @@ Item {
         WinMenuItem {
             text: qsTr("卸载此程序…")
             iconGlyph: String.fromCharCode(UiFont.Uninstall)
-            dark: root.dark
             onTriggered: root.uninstallRequested()
         }
 
@@ -109,7 +103,6 @@ Item {
         WinMenuItem {
             text: qsTr("从启动台移除")
             iconGlyph: String.fromCharCode(UiFont.Remove)
-            dark: root.dark
             onTriggered: root.removeRequested()
         }
     }
@@ -119,20 +112,16 @@ Item {
         id: background
         anchors.fill: parent
         anchors.margins: 4
-        radius: 10
-        color: area.containsMouse
-               ? (root.dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.10))
-               : "transparent"
+        radius: Theme.rLg
+        color: area.containsMouse ? Theme.tileHover : "transparent"
         border.width: 1
-        border.color: area.containsMouse
-                      ? (root.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.08))
-                      : "transparent"
+        border.color: area.containsMouse ? Theme.tileHoverBorder : "transparent"
 
         Behavior on color {
-            ColorAnimation { duration: 90 }
+            ColorAnimation { duration: Theme.durFast }
         }
         Behavior on border.color {
-            ColorAnimation { duration: 90 }
+            ColorAnimation { duration: Theme.durFast }
         }
     }
 
@@ -158,14 +147,14 @@ Item {
             anchors.fill: parent
             radius: Math.round(root.iconSize * 0.24)
             visible: !root.hasIcon
-            color: root.dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.12)
+            color: Theme.tilePlaceholder
 
             Text {
                 anchors.centerIn: parent
                 text: root.app ? root.app.name.charAt(0).toUpperCase() : "?"
                 font.pixelSize: Math.round(root.iconSize * 0.44)
                 font.bold: true
-                color: root.textColor
+                color: Theme.textHi
                 opacity: 0.75
             }
         }
@@ -192,8 +181,8 @@ Item {
         // 负宽 Text 什么都不画（名字整行消失就是这么来的）
         width: Math.max(0, parent.width - 16)
         text: root.app ? root.app.name : ""
-        color: root.textColor
-        font.pixelSize: 12
+        color: Theme.textHi
+        font.pixelSize: Theme.fsBody
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
         maximumLineCount: 2
@@ -219,6 +208,6 @@ Item {
 
     scale: area.pressed ? 0.94 : 1.0
     Behavior on scale {
-        NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: Theme.durFast; easing.type: Easing.OutCubic }
     }
 }

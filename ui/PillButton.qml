@@ -1,34 +1,31 @@
 import QtQuick
 
 /*
- * 胶囊按钮，面板右上角的「编辑 / 关闭」用。
+ * 胶囊按钮，面板右上角的「编辑 / 设置」用。
+ * 颜色走 Theme。
  */
 Rectangle {
     id: root
 
-    property bool dark: true
-    property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
     property alias text: label.text
 
     signal clicked()
 
     implicitWidth: label.implicitWidth + 24
     implicitHeight: 30
-    radius: 8
+    radius: Theme.rMd
 
-    color: area.containsMouse
-           ? (root.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.09))
-           : (root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.045))
+    color: area.containsMouse ? Theme.stateHover : Theme.stateIdle
 
     Behavior on color {
-        ColorAnimation { duration: 90 }
+        ColorAnimation { duration: Theme.durFast }
     }
 
     Text {
         id: label
         anchors.centerIn: parent
-        color: root.textColor
-        font.pixelSize: 12
+        color: Theme.textHi
+        font.pixelSize: Theme.fsBody
     }
 
     MouseArea {

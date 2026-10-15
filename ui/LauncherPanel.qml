@@ -10,6 +10,9 @@ import WinLauncher.Core
  * 但滚动方向是**纵向**的（macOS 那边是一个纵向滚动的分组列表，不是横向翻页，
  * 所以这里也没有底部圆点）。cellHeight 取容器高度的 1/4，于是不管面板多高，
  * 可见区域永远正好 4 行，滚轮/拖动按行吸附。
+ *
+ * 颜色一律走 Theme（深浅模式由 Theme.dark 内部决定），
+ * 这里不再需要 dark / textColor / subTextColor 参数，更不用往下透传。
  */
 Item {
     id: root
@@ -20,17 +23,13 @@ Item {
     signal closeRequested()
 
     // 圆角半径必须和 LauncherWindow.cornerRadius 一致（底图按这个半径裁的）
-    property real cornerRadius: 26
+    property real cornerRadius: Theme.rPanel
     // C++ 烘的玻璃底图是否已就绪；没就绪时 GlassPanel 走不透明兜底
     property bool glassReady: false
 
     // 一屏可见的网格密度（对齐 macOS：7 列 × 4 行）
     readonly property int visibleRows: 4
     readonly property int columns: Math.max(3, AppConfig.gridColumns)
-
-    readonly property bool dark: AppConfig.darkMode
-    readonly property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
-    readonly property color subTextColor: dark ? "#9A9AA0" : "#6E6E73"
 
     readonly property int categoryIndex: Math.max(0, Ctrl.searchCategoryKeys.indexOf(
                                                       AppConfig.searchCategory))
@@ -57,7 +56,6 @@ Item {
 
     GlassPanel {
         anchors.fill: parent
-        dark: root.dark
         glassReady: root.glassReady
         cornerRadius: root.cornerRadius
     }
@@ -78,9 +76,6 @@ Item {
             SearchBar {
                 id: searchBar
                 Layout.fillWidth: true
-                dark: root.dark
-                textColor: root.textColor
-                hintColor: root.subTextColor
                 /*
                  * 两个方向：
                  *   - text: Ctrl.query —— 外部复位（面板重开清空）回填输入框；
@@ -111,15 +106,11 @@ Item {
 
             PillButton {
                 text: qsTr("编辑")
-                dark: root.dark
-                textColor: root.textColor
                 onClicked: root.editRequested()
             }
 
             PillButton {
                 text: qsTr("设置")
-                dark: root.dark
-                textColor: root.textColor
                 onClicked: root.settingsRequested()
             }
         }
@@ -127,8 +118,6 @@ Item {
         // ---- 分类标签（对齐 macOS Applications 面板那一排）----
         CategoryBar {
             Layout.fillWidth: true
-            dark: root.dark
-            textColor: root.textColor
         }
 
         // ---- 面包屑：进了文件夹才出现 ----
@@ -144,20 +133,18 @@ Item {
                 implicitWidth: backLabel.implicitWidth + 20
                 implicitHeight: 24
                 radius: 12
-                color: backArea.containsMouse
-                       ? (root.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08))
-                       : (root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.04))
+                color: backArea.containsMouse ? Theme.stateHover : Theme.stateIdle
 
                 Behavior on color {
-                    ColorAnimation { duration: 90 }
+                    ColorAnimation { duration: Theme.durFast }
                 }
 
                 Text {
                     id: backLabel
                     anchors.centerIn: parent
                     text: qsTr("‹ 全部应用")
-                    color: root.textColor
-                    font.pixelSize: 12
+                    color: Theme.textHi
+                    font.pixelSize: Theme.fsBody
                 }
 
                 MouseArea {
@@ -173,16 +160,16 @@ Item {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
                 text: Ctrl.openGroupLabel
-                color: root.textColor
-                font.pixelSize: 13
+                color: Theme.textHi
+                font.pixelSize: Theme.fsLabel
                 font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
             }
 
             Text {
                 text: qsTr("%1 个").arg(Ctrl.matchCount)
-                color: root.subTextColor
-                font.pixelSize: 11
+                color: Theme.textMid
+                font.pixelSize: Theme.fsSmall
                 verticalAlignment: Text.AlignVCenter
             }
         }
@@ -190,6 +177,7 @@ Item {
         // ---- 中部：7 × 4 的图标网格（自由纵向滚动）----
         GridView {
             id: grid
+            objectName: "appGrid"   // --dump-icons 靠它打格子几何
             Layout.fillWidth: true
             Layout.fillHeight: true
 
@@ -233,8 +221,6 @@ Item {
                     width: parent.width
                     height: parent.height
                     visible: !(modelData && modelData.isFolder)
-                    dark: root.dark
-                    textColor: root.textColor
                     app: modelData ? modelData.item : null
                     onActivated: root.launchRequested(app)
                     onAdminRequested: Ctrl.runAsAdmin(app)
@@ -247,8 +233,6 @@ Item {
                     width: parent.width
                     height: parent.height
                     visible: modelData && modelData.isFolder
-                    dark: root.dark
-                    textColor: root.textColor
                     folder: modelData
                     onActivated: Ctrl.openGroup(modelData.groupKey)
                 }
@@ -262,8 +246,8 @@ Item {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 visible: Ctrl.gridItems.length === 0
-                color: root.subTextColor
-                font.pixelSize: 13
+                color: Theme.textMid
+                font.pixelSize: Theme.fsLabel
                 text: Ctrl.scanning
                       ? qsTr("正在扫描已安装应用…")
                       : (Ctrl.query.length > 0
@@ -283,8 +267,8 @@ Item {
 
             Text {
                 text: qsTr("全盘搜索（Everything）· %1").arg(root.categoryLabel)
-                color: root.subTextColor
-                font.pixelSize: 11
+                color: Theme.textMid
+                font.pixelSize: Theme.fsSmall
             }
 
             ListView {
@@ -298,10 +282,8 @@ Item {
                 delegate: Rectangle {
                     width: 46
                     height: 46
-                    radius: 10
-                    color: hitArea.containsMouse
-                           ? (root.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.08))
-                           : "transparent"
+                    radius: Theme.rLg
+                    color: hitArea.containsMouse ? Theme.stateHover : "transparent"
 
                     Image {
                         anchors.centerIn: parent
@@ -337,8 +319,8 @@ Item {
             Text {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
-                color: Ctrl.errorText.length > 0 ? "#FF6B6B" : root.subTextColor
-                font.pixelSize: 11
+                color: Ctrl.errorText.length > 0 ? Theme.err : Theme.textMid
+                font.pixelSize: Theme.fsSmall
                 text: Ctrl.errorText.length > 0 ? Ctrl.errorText : Ctrl.statusText
             }
 
@@ -350,19 +332,24 @@ Item {
             }
 
             Text {
-                color: root.subTextColor
-                font.pixelSize: 11
-                // 搜索词或分类筛选生效时显示「命中 / 总数」，否则只显示总数
+                color: Theme.textMid
+                font.pixelSize: Theme.fsSmall
+                /*
+                 * 左边那行已经在说「共 N 个应用」了，这里只在**筛选生效**时
+                 * 补一个「命中 / 总数」。没筛选就整个收起 —— 否则左右两处
+                 * 都在报同一个数字，看着像出了什么问题。
+                 */
+                visible: text.length > 0
                 text: Ctrl.scanning
                       ? qsTr("扫描 %1 / %2").arg(Ctrl.scanProgress).arg(Ctrl.scanTotal)
                       : (Ctrl.query.length > 0 || AppConfig.appCategory !== "all"
                          ? qsTr("%1 / %2").arg(Ctrl.matchCount).arg(Ctrl.totalCount)
-                         : qsTr("%1 个应用").arg(Ctrl.totalCount))
+                         : "")
             }
 
             Text {
-                color: root.subTextColor
-                font.pixelSize: 11
+                color: Theme.textMid
+                font.pixelSize: Theme.fsSmall
                 text: AppConfig.hotkey
             }
         }

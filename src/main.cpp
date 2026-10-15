@@ -191,6 +191,12 @@ int main(int argc, char *argv[])
     Config config;
     config.load();
 
+    // 主题排查用：确认引擎拿到的到底是不是配置里的值
+    wlTrace(QStringLiteral("config: path=%1 darkMode=%2 followSystemTheme=%3")
+                .arg(config.configPath())
+                .arg(config.darkMode())
+                .arg(config.followSystemTheme()));
+
     EverythingSearch everything;
 
     // 自检：--test-everything <query>  直接查一次 Everything 索引后退出（不建窗口）
@@ -544,6 +550,16 @@ int main(int argc, char *argv[])
             testTerm = args.at(i + 1);
     }
 
+    /*
+     * --test-windows（配合 --dump-icons）：脚本化打开「设置」「编辑」两个独立窗口
+     * 并各抓一张图。
+     *
+     * 这两个是 QML Window，不跟主面板一起显示，按热键弹不出来；靠点鼠标又要猜
+     * 坐标（面板是自绘的，UI 树里没有按钮节点）。所以直接调它们的 openWindow()。
+     * 验主题配色时这两张图是必需的 —— 它们是颜色最密集的两个界面。
+     */
+    const bool testWindows = app.arguments().contains(QStringLiteral("--test-windows"));
+
     if (app.arguments().contains(QStringLiteral("--dump-icons"))) {
         /*
          * 面板是热键按下去才弹的，脚本按热键的时机对不齐，所以用
@@ -644,12 +660,42 @@ int main(int argc, char *argv[])
         // 捕获 &controller / testTerm 是给下面的 --test-search 用的：
         // 嵌套 lambda 无法访问外层 lambda 没捕获的东西（C3493）
         QObject::connect(poll, &QTimer::timeout, window,
-                         [window, grab, dumpState, dumpIcons, &controller, testTerm] {
+                         [window, grab, dumpState, dumpIcons, &controller, testTerm,
+                          testWindows] {
             const bool visible = window->isVisible();
             if (visible && !dumpState->property("sawVisible").toBool()) {
                 dumpState->setProperty("sawVisible", true);
                 const int n = dumpState->property("shots").toInt() + 1;
                 dumpState->setProperty("shots", n);
+
+                // 面板稳定后再去开「设置 / 编辑」两个窗口（见 --test-windows 说明）
+                if (testWindows) {
+                    QTimer::singleShot(2500, window, [window] {
+                        const auto shoot = [window](const char *prop, const QString &file) {
+                            auto *w = qobject_cast<QQuickWindow *>(
+                                window->property(prop).value<QObject *>());
+                            if (!w) {
+                                wlTrace(QStringLiteral("window-test: %1 取不到窗口").arg(file));
+                                return;
+                            }
+                            QMetaObject::invokeMethod(w, "openWindow");
+                            QTimer::singleShot(900, w, [w, file, window] {
+                                const QImage shot = w->grabWindow();
+                                const QString out =
+                                    QDir(QCoreApplication::applicationDirPath()).filePath(file);
+                                if (shot.save(out))
+                                    wlTrace(QStringLiteral("window-test: %1 (%2x%3) "
+                                                           "mainWindow.darkBackdrop=%4")
+                                                .arg(file).arg(shot.width()).arg(shot.height())
+                                                .arg(window->property("darkBackdrop").toBool()));
+                                else
+                                    wlTrace(QStringLiteral("window-test: %1 保存失败").arg(file));
+                            });
+                        };
+                        shoot("settingsWindow", QStringLiteral("shot-settings.png"));
+                        shoot("editWindow", QStringLiteral("shot-edit.png"));
+                    });
+                }
                 // 面板刚可见时图标可能还在异步解码，隔 1.5s 再抓一张并打点
                 grab(QStringLiteral("shot-panel-%1.png").arg(n));
                 // 时间线：面板可见后 0.5 / 1.5 / 3 / 6 / 10 秒各抓一张，
@@ -686,6 +732,28 @@ int main(int argc, char *argv[])
                         walk(window->contentItem());
                         wlTrace(QStringLiteral("geometry +%1ms: sized tiles=%2, labels width>0=%3 | %4")
                                     .arg(delay).arg(withSize).arg(labelOk).arg(first));
+
+                        /*
+                         * 网格几何：一屏到底几行、格子多高。
+                         * cellHeight 由 QML 按 `Math.floor(height / 4)` 算出来，
+                         * 这里把 height 和 cellHeight 并排打出来 —— 两者对不上
+                         * （height / cellHeight 明显 > 4）就说明绑定拿到的是旧的
+                         * height，界面上会表现为"第 5 行露半截"。
+                         */
+                        if (auto *g =
+                                window->findChild<QQuickItem *>(QStringLiteral("appGrid"))) {
+                            wlTrace(QStringLiteral("gridgeom +%1ms: y=%2 h=%3 cellW=%4 cellH=%5 "
+                                                   "rows=%6 contentY=%7 items=%8")
+                                        .arg(delay)
+                                        .arg(int(g->y()))
+                                        .arg(int(g->height()))
+                                        .arg(g->property("cellWidth").toInt())
+                                        .arg(g->property("cellHeight").toInt())
+                                        .arg(g->height()
+                                             / qMax(1, g->property("cellHeight").toInt()))
+                                        .arg(g->property("contentY").toDouble(), 0, 'f', 1)
+                                        .arg(g->property("count").toInt()));
+                        }
 
                         /*
                          * 可视树 dump + 根探测：只在最后一条时间线（k==4，10s）打，

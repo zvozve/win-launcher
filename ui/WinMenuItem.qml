@@ -12,12 +12,13 @@ import WinLauncher.Core
  *
  * 尺寸按 Win11：行高 32、圆角 4、左右各留 4px 内边距（高亮块不能顶到容器边上，
  * 否则第一项/最后一项 hover 时高亮块的直角会盖住菜单容器的圆角）。
+ *
+ * 颜色走 Theme。
  */
 MenuItem {
     id: root
 
     property string iconGlyph: ""     // 码点（UiFont.Glyph.* 或者直接给 "E8B7" 这类字符）
-    property bool dark: false
 
     implicitHeight: 32
     implicitWidth: 188
@@ -37,10 +38,10 @@ MenuItem {
             height: root.implicitHeight
             visible: root.showIcon
             text: root.showIcon ? root.iconGlyph : ""
-            color: root.dark ? "#FFFFFF" : "#1A1A1A"
+            color: Theme.textHi
             font.family: UiFont.menuIconFamily
             // Fluent 字形的视觉重心偏上，15px 配 32px 行高最接近系统观感
-            font.pixelSize: 15
+            font.pixelSize: Theme.fsHead
             horizontalAlignment: Text.AlignLeft
             verticalAlignment: Text.AlignVCenter
         }
@@ -49,8 +50,8 @@ MenuItem {
             width: root.implicitWidth - root.iconColumn - 16
             height: root.implicitHeight
             text: root.text
-            color: root.dark ? "#FFFFFF" : "#1A1A1A"
-            font.pixelSize: 13
+            color: Theme.textHi
+            font.pixelSize: Theme.fsLabel
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
         }
@@ -59,10 +60,8 @@ MenuItem {
     background: Rectangle {
         anchors.fill: parent
         anchors.margins: 4
-        radius: 4
-        color: root.highlighted
-               ? (root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06))
-               : "transparent"
+        radius: Theme.rXs
+        color: root.highlighted ? Theme.stateHover : "transparent"
 
         Behavior on color {
             ColorAnimation { duration: 80 }

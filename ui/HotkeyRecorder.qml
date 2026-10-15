@@ -4,27 +4,29 @@ import WinLauncher.Core
 /*
  * 热键录制控件：点击进入录制态，按下组合键即写回配置。
  * 只接受「至少一个修饰键 + 一个主键」的组合，避免录到裸字母。
+ *
+ * 颜色走 Theme：录制态用 accentSoft 底 + accent 描边，
+ * 和搜索框聚焦环是同一支蓝。
  */
 Rectangle {
     id: root
 
-    property bool dark: true
-    property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
-    property color subTextColor: dark ? "#9A9AA0" : "#6E6E73"
     property bool capturing: false
 
     implicitWidth: 170
     implicitHeight: 28
-    radius: 7
+    radius: Theme.rSm
 
     color: capturing
-           ? Qt.rgba(0.04, 0.52, 1.0, 0.22)
-           : (area.containsMouse
-              ? (dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.08))
-              : (dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05)))
+           ? Theme.accentSoft
+           : (area.containsMouse ? Theme.stateHover : Theme.stateIdle)
 
     border.width: 1
-    border.color: capturing ? "#0A84FF" : "transparent"
+    border.color: capturing ? Theme.accent : "transparent"
+
+    Behavior on color {
+        ColorAnimation { duration: Theme.durFast }
+    }
 
     focus: capturing
     Keys.onPressed: (event) => {
@@ -97,8 +99,8 @@ Rectangle {
     Text {
         anchors.centerIn: parent
         text: root.capturing ? qsTr("按下组合键…（Esc 取消）") : AppConfig.hotkey
-        color: root.capturing ? "#FFFFFF" : root.textColor
-        font.pixelSize: 12
+        color: root.capturing ? Theme.accent : Theme.textHi
+        font.pixelSize: Theme.fsBody
     }
 
     MouseArea {

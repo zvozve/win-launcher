@@ -6,13 +6,11 @@ import WinLauncher.Core
  * 搜索类型选择器（搜索栏最左侧）。
  * 只负责下拉交互；真正生效的类型存在 AppConfig.searchCategory，
  * 由 Controller 同时用于「本地过滤」和「Everything 的 ext: 过滤」。
+ *
+ * 颜色走 Theme。
  */
 Item {
     id: root
-
-    property bool dark: true
-    property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
-    property color hintColor: dark ? "#8E8E93" : "#8A8A8E"
 
     readonly property var keys: Ctrl.searchCategoryKeys
     readonly property var labels: Ctrl.searchCategoryLabels
@@ -29,15 +27,13 @@ Item {
     Rectangle {
         id: pill
         anchors.fill: parent
-        radius: 7
-        color: area.containsMouse || menu.visible
-               ? (root.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.09))
-               : (root.dark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0, 0, 0, 0.04))
+        radius: Theme.rSm
+        color: area.containsMouse || menu.visible ? Theme.stateHover : Theme.stateIdle
         border.width: 1
-        border.color: root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05)
+        border.color: Theme.border
 
         Behavior on color {
-            ColorAnimation { duration: 90 }
+            ColorAnimation { duration: Theme.durFast }
         }
 
         Row {
@@ -46,13 +42,13 @@ Item {
 
             Text {
                 text: root.labels[root.currentIndex]
-                color: root.textColor
-                font.pixelSize: 12
+                color: Theme.textHi
+                font.pixelSize: Theme.fsBody
             }
 
             Text {
                 text: "▾"
-                color: root.hintColor
+                color: Theme.textLo
                 font.pixelSize: 10
             }
         }
@@ -75,10 +71,10 @@ Item {
         padding: 4
 
         background: Rectangle {
-            radius: 8
-            color: root.dark ? "#2B2B30" : "#FFFFFF"
+            radius: Theme.rMd
+            color: Theme.bgMenu
             border.width: 1
-            border.color: root.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
+            border.color: Theme.border
         }
 
         contentItem: ListView {
@@ -93,20 +89,22 @@ Item {
 
                 width: ListView.view.width
                 height: 28
-                radius: 6
+                radius: Theme.rSm
                 color: index === root.currentIndex
-                       ? Qt.rgba(0.04, 0.52, 1.0, 0.88)
-                       : (itemArea.containsMouse
-                          ? (root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06))
-                          : "transparent")
+                       ? Theme.accent
+                       : (itemArea.containsMouse ? Theme.stateHover : "transparent")
+
+                Behavior on color {
+                    ColorAnimation { duration: Theme.durFast }
+                }
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.left: parent.left
                     anchors.leftMargin: 10
                     text: modelData
-                    font.pixelSize: 12
-                    color: index === root.currentIndex ? "#FFFFFF" : root.textColor
+                    font.pixelSize: Theme.fsBody
+                    color: index === root.currentIndex ? Theme.accentText : Theme.textHi
                 }
 
                 MouseArea {
