@@ -12,6 +12,8 @@
 #include <QStandardPaths>
 #include <QThread>
 
+#include "DebugTrace.h"
+
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
 #endif
@@ -173,10 +175,67 @@ QImage normalizeIcon(const QImage &src)
 
 } // namespace
 
+/*
+ * 图标缓存的根目录。
+ *
+ * 踩过的坑：本工程**没有设置 organizationName**，于是
+ *   QStandardPaths::AppConfigLocation  -> %LOCALAPPDATA%\WinLauncher   （能写）
+ *   QStandardPaths::AppLocalDataLocation -> %LOCALAPPDATA%\LocalLow\WinLauncher（**写不进去**）
+ * 两个解析结果不一样，而 LocalLow 在这台机器上连目录都建不出来 ——
+ * 表现就是「界面正常、网格正常、图标全是首字母占位块」，
+ * 因为 img.save() 每次都失败（写过一次 trace 才看出来）。
+ *
+ * 所以这里不猜：拿到候选目录后**实际写一个探针文件**，写不进去就换下一个。
+ * 正常机器上第一个候选就是对的，不会留下垃圾。
+ */
 QString IconProvider::cacheDir()
 {
-    const QString base = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    return QDir(base).filePath(QStringLiteral("cache/icons"));
+    QStringList candidates;
+    const QString localData =
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    const QString configData =
+        QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    candidates << localData << configData;
+
+    // 兜底：直接按 LOCALAPPDATA 拼（AppConfigLocation 理论上就是这个）
+    const QString env = qEnvironmentVariable("LOCALAPPDATA");
+    if (!env.isEmpty())
+        candidates << QDir(env).filePath(QCoreApplication::applicationName());
+
+    /*
+     * 最后的兜底：临时目录。
+     * 本机（受限令牌 / 沙箱）下 AppData\Local\WinLauncher 只剩读权限，
+     * 连 LocalLow 的目录都建不出来 —— 这时把缓存挪到 %TEMP%\WinLauncher 下，
+     * 图标照样能生成。代价是缓存可能被清理，那就下次重新提取一遍。
+     */
+    const QString tmp = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    if (!tmp.isEmpty())
+        candidates << QDir(tmp).filePath(QCoreApplication::applicationName());
+
+    candidates.removeAll(QString());
+    candidates.removeDuplicates();
+
+    for (const QString &base : std::as_const(candidates)) {
+        const QString dir = QDir(base).filePath(QStringLiteral("cache/icons"));
+        if (!QDir().mkpath(dir)) {
+            wlTrace(QStringLiteral("cacheDir: mkpath 失败 -> %1").arg(dir));
+            continue;
+        }
+        // 探针：mkpath 成功不代表能写（只读重定向的目录就是这样）
+        const QString probe = QDir(dir).filePath(QStringLiteral(".write-probe"));
+        QFile f(probe);
+        if (!f.open(QIODevice::WriteOnly)) {
+            wlTrace(QStringLiteral("cacheDir: 不可写 -> %1").arg(dir));
+            continue;
+        }
+        f.close();
+        f.remove();
+        wlTrace(QStringLiteral("cacheDir: %1").arg(dir));
+        return dir;
+    }
+
+    wlTrace(QStringLiteral("cacheDir: 所有候选都写不进去，图标缓存停用"));
+    return QString();
 }
 
 QString IconProvider::iconForPath(const QString &path)
@@ -186,6 +245,8 @@ QString IconProvider::iconForPath(const QString &path)
 
     const QFileInfo fi(path);
     const QString dir = cacheDir();
+    if (dir.isEmpty())
+        return QString(); // 没有可写目录：交给 QML 画占位块
     QDir().mkpath(dir);
 
     // key 带上 mtime/size，源文件更新后缓存自动失效
@@ -219,8 +280,12 @@ QString IconProvider::iconForPath(const QString &path)
     }
 
     img = normalizeIcon(img);
-    if (img.isNull() || !img.save(outPath, "PNG"))
+    if (img.isNull() || !img.save(outPath, "PNG")) {
+        wlTrace(QStringLiteral("icon: 生成失败 path=%1 out=%2 null=%3")
+                    .arg(path, outPath)
+                    .arg(img.isNull() ? 1 : 0));
         return QString();
+    }
 
     return outPath;
 }

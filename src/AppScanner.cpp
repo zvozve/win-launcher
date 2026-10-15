@@ -100,10 +100,38 @@ QString normalizeDisplayIcon(const QString &raw)
     return s.trimmed();
 }
 
+/*
+ * 开始菜单里那些「Windows 自带」的文件夹不该被折叠。
+ *
+ * 不是洁癖：辅助功能 5 个、管理工具 20 个都是平时要一个个点的系统工具，
+ * 折进文件夹反而多一次点击；而 J-Link / MSYS2 / NI 那种一堆入口的才需要收。
+ * 放在文件夹这一层判断比在关键词层做干净（AppCategory 的 utility 规则就是被这批
+ * 逼出来的）。比较用小写。
+ */
+bool isSystemFolderGroup(const QString &group)
+{
+    static const QSet<QString> kBlocked = {
+        QStringLiteral("accessibility"),
+        QStringLiteral("administrative tools"),
+        QStringLiteral("windows administrative tools"),
+        QStringLiteral("windows 管理工具"),
+        QStringLiteral("辅助功能"),
+        QStringLiteral("附件"),
+        QStringLiteral("accessories"),
+        QStringLiteral("startup"),
+        QStringLiteral("启动"),
+        QStringLiteral("系统工具"),
+        QStringLiteral("system tools"),
+    };
+    return kBlocked.contains(group.toLower());
+}
+
 void appendStartMenuTasks(const QString &root, QList<AppScanner::Task> *out)
 {
     if (root.isEmpty())
         return;
+
+    const QDir rootDir(root);
 
     // 只收 .lnk。.url 是「网站快捷方式」（官网 / 文档 / 支持论坛 / mailto），
     // 开始菜单里每个软件都附带一堆，macOS 的启动台也不会把它们列出来。
@@ -117,11 +145,24 @@ void appendStartMenuTasks(const QString &root, QList<AppScanner::Task> *out)
         // 名字里就写着卸载的，连图标都不用去提
         if (isNoiseName(baseName))
             continue;
+
+        /*
+         * 归组键 = 快捷方式所在目录相对开始菜单根的那一段。
+         * 直接躺在开始菜单根下的（"Git\Git Bash.lnk" 的父目录就是根）
+         * 相对路径是 "." → 不归组，保持原来的平铺。
+         */
+        const QString rel = QDir::cleanPath(
+            rootDir.relativeFilePath(QFileInfo(path).absolutePath()));
+        const bool inSubFolder = !rel.isEmpty() && rel != QLatin1String(".");
+
         AppScanner::Task task;
         task.kind = AppScanner::Task::Link;
         task.path = QFileInfo(path).absoluteFilePath();
         task.name = baseName;
         task.seed = task.path.toLower();
+        task.group = inSubFolder ? rel : QString();
+        if (isSystemFolderGroup(task.group))
+            task.group.clear();
         out->append(task);
     }
 }
@@ -205,6 +246,7 @@ bool AppScanner::runTask(const Task &task, ScannedApp *out)
 
     ScannedApp app;
     app.seed = task.seed;
+    app.group = task.group;
 
     if (task.kind == Task::Executable) {
         app.name = task.name;
@@ -269,6 +311,7 @@ AppItem *AppScanner::toItem(const ScannedApp &data, QObject *parent)
     item->setSourcePath(data.sourcePath);
     item->setIconPath(data.iconPath);
     item->setCategory(data.category);
+    item->setGroup(data.group);
     item->setRemovable(data.removable);
     item->rebindId(data.seed.isEmpty() ? data.target.toLower() : data.seed);
     return item;

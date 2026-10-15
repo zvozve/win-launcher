@@ -30,6 +30,13 @@ class Config : public QObject
     // 这个是「应用的类别」，值域见 AppCategory::keys()。
     Q_PROPERTY(QString appCategory READ appCategory WRITE setAppCategory
                    NOTIFY appCategoryChanged)
+    /*
+     * 同一个开始菜单文件夹里至少这么多条才折叠成一个文件夹（默认 3）。
+     * 见 Controller::rebuildGroups：本机 2 个一组的多半是「主程序 + 卸载/帮助」，
+     * 折起来反而多一次点击。
+     */
+    Q_PROPERTY(int groupThreshold READ groupThreshold WRITE setGroupThreshold
+                   NOTIFY groupThresholdChanged)
     Q_PROPERTY(QString configPath READ configPath CONSTANT)
 
 public:
@@ -47,6 +54,7 @@ public:
     int gridColumns() const { return m_gridColumns; }
     QString searchCategory() const { return m_searchCategory; }
     QString appCategory() const { return m_appCategory; }
+    int groupThreshold() const { return m_groupThreshold; }
     QString configPath() const;
 
     void setHotkey(const QString &v);
@@ -59,6 +67,7 @@ public:
     void setGridColumns(int v);
     void setSearchCategory(const QString &v);
     void setAppCategory(const QString &v);
+    void setGroupThreshold(int v);
 
     // ---- 搜索类型（本地过滤 + Everything 的 ext: 过滤共用同一张表）----
     // key: app / doc / image / video / audio / archive / all
@@ -87,6 +96,7 @@ signals:
     void gridColumnsChanged();
     void searchCategoryChanged();
     void appCategoryChanged();
+    void groupThresholdChanged();
 
 private:
     void syncDarkMode();
@@ -101,4 +111,5 @@ private:
     int m_gridColumns = 7;
     QString m_searchCategory = QStringLiteral("app");
     QString m_appCategory = QStringLiteral("all");
+    int m_groupThreshold = 3;
 };

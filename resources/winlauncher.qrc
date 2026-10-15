@@ -6,10 +6,13 @@
         <file alias="qml/CategoryBar.qml">../ui/CategoryBar.qml</file>
         <file alias="qml/CategorySelector.qml">../ui/CategorySelector.qml</file>
         <file alias="qml/EditWindow.qml">../ui/EditWindow.qml</file>
+        <file alias="qml/FolderTile.qml">../ui/FolderTile.qml</file>
         <file alias="qml/GlassPanel.qml">../ui/GlassPanel.qml</file>
         <file alias="qml/HotkeyRecorder.qml">../ui/HotkeyRecorder.qml</file>
         <file alias="qml/WinButton.qml">../ui/WinButton.qml</file>
+        <file alias="qml/WinMenuItem.qml">../ui/WinMenuItem.qml</file>
         <file alias="qml/LauncherPanel.qml">../ui/LauncherPanel.qml</file>
+        <file alias="qml/LayoutTest.qml">../ui/LayoutTest.qml</file>
         <file alias="qml/Main.qml">../ui/Main.qml</file>
         <file alias="qml/PillButton.qml">../ui/PillButton.qml</file>
         <file alias="qml/SearchBar.qml">../ui/SearchBar.qml</file>

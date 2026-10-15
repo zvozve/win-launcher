@@ -95,6 +95,26 @@ void AppItem::setCategory(const QString &v)
     emit categoryChanged();
 }
 
+/*
+ * 归组键的最后一段就是文件夹名（"SEGGER\J-Link V7.98b" -> "J-Link V7.98b"）。
+ * 放在 C++ 里算，QML 的文件夹瓦片上直接绑 groupLabel 就行。
+ */
+QString AppItem::groupLabel() const
+{
+    if (m_group.isEmpty())
+        return QString();
+    const int slash = m_group.lastIndexOf(QLatin1Char('\\'));
+    return slash < 0 ? m_group : m_group.mid(slash + 1);
+}
+
+void AppItem::setGroup(const QString &v)
+{
+    if (m_group == v)
+        return;
+    m_group = v;
+    emit groupChanged();
+}
+
 void AppItem::setRemovable(bool v)
 {
     if (m_removable == v)

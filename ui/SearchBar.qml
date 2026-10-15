@@ -32,6 +32,11 @@ Item {
 
     signal accepted()
     /*
+     * Esc 按下且输入框是空的。面板据此决定「退出文件夹」还是「收起面板」。
+     * 输入框非空时 Esc 只清空文字，不发这个信号。
+     */
+    signal escaped()
+    /*
      * 用户编辑文本（敲字 / 清空 / Esc）时发出。外部（LauncherPanel）收到后写
      * Ctrl.query。注意不能在内部直接给 root.text 赋值来上报 —— root.text 被
      * 外部绑定着（text: Ctrl.query），命令式赋值会**打断绑定**，之后外部复位
@@ -148,6 +153,9 @@ Item {
                         root.clear()
                         event.accepted = true
                     } else {
+                        // 空的时候别把 Esc 吃掉：面板要么退回上一层（文件夹），
+                        // 要么收起。见 LauncherPanel.onEscaped
+                        root.escaped()
                         event.accepted = false
                     }
                 }

@@ -2,5 +2,9 @@ build
 dist
 .workbuddy
 
+# 运行期诊断产物（--trace / --dump-icons 落盘）
+winlauncher.trace
+winlauncher.*.txt
+
 # Everything SDK 二进制：由 packaging/fetch-everything-sdk.bat 拉取，不入库
 third_party/everything/*.dll

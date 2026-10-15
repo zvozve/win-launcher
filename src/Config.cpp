@@ -59,6 +59,7 @@ void Config::load()
     m_gridColumns = o.value(QStringLiteral("gridColumns")).toInt(7);
     m_searchCategory = o.value(QStringLiteral("searchCategory")).toString(QStringLiteral("app"));
     m_appCategory = o.value(QStringLiteral("appCategory")).toString(QStringLiteral("all"));
+    m_groupThreshold = o.value(QStringLiteral("groupThreshold")).toInt(3);
 
     // 以注册表为准，避免用户手工改动后配置与系统不一致
     m_autostart = isAutostartEnabled();
@@ -79,6 +80,7 @@ QJsonObject Config::toJson() const
     o.insert(QStringLiteral("gridColumns"), m_gridColumns);
     o.insert(QStringLiteral("searchCategory"), m_searchCategory);
     o.insert(QStringLiteral("appCategory"), m_appCategory);
+    o.insert(QStringLiteral("groupThreshold"), m_groupThreshold);
     return o;
 }
 
@@ -267,5 +269,19 @@ void Config::setGridColumns(int v)
         return;
     m_gridColumns = clamped;
     emit gridColumnsChanged();
+    save();
+}
+
+/*
+ * 归组阈值。下限 2：1 就等于「每个条目各自成组」，那不是归组是折腾。
+ * 上限 12：再高基本就没有组会被折叠了。
+ */
+void Config::setGroupThreshold(int v)
+{
+    const int clamped = qBound(2, v, 12);
+    if (m_groupThreshold == clamped)
+        return;
+    m_groupThreshold = clamped;
+    emit groupThresholdChanged();
     save();
 }

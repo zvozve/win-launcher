@@ -292,6 +292,22 @@ Window {
                             onValueModified: AppConfig.gridColumns = value
                         }
                     }
+
+                    Sep {}
+
+                    SettingRow {
+                        label: qsTr("归组阈值")
+                        hint: qsTr("同一开始菜单文件夹里至少这么多条才折成一个文件夹")
+                        textColor: root.textColor
+                        subTextColor: root.subTextColor
+
+                        SpinBox {
+                            from: 2
+                            to: 12
+                            value: AppConfig.groupThreshold
+                            onValueModified: AppConfig.groupThreshold = value
+                        }
+                    }
                 }
 
                 // ---- 扫描与图标 ----

@@ -20,6 +20,9 @@ constexpr int kMinPanelHeight = 480;
 constexpr int kMaxPanelWidth = 1280;
 constexpr int kMaxPanelHeight = 900;
 
+// show() 之后多久内的 WindowDeactivate 视为「焦点还没交接到我们」而忽略
+constexpr int kDeactivateGraceMs = 300;
+
 } // namespace
 
 LauncherWindow::LauncherWindow(QWindow *parent)
@@ -144,6 +147,7 @@ void LauncherWindow::showAtCursor()
     show();
     raise();
     requestActivate();
+    m_lastShow.start(); // 给 WindowDeactivate 一个宽限期，见 event()
 
     wlTrace(QStringLiteral("showAtCursor: panel=(%1,%2 %3x%4) window=%5x%6 r=%7")
                 .arg(m_panelRect.x())
@@ -174,10 +178,17 @@ void LauncherWindow::hidePanel()
 void LauncherWindow::showEvent(QShowEvent *event)
 {
     QQuickWindow::showEvent(event);
+    wlTrace("showEvent");   // 可见性时间线：和 hideEvent / --dump-icons 的 poll 打点对齐看
     if (!m_chromeReady) {
         applyWindowChrome();
         m_chromeReady = true;
     }
+}
+
+void LauncherWindow::hideEvent(QHideEvent *event)
+{
+    QQuickWindow::hideEvent(event);
+    wlTrace("hideEvent");
 }
 
 bool LauncherWindow::event(QEvent *event)
@@ -192,6 +203,19 @@ bool LauncherWindow::event(QEvent *event)
 
     if (event->type() == QEvent::WindowDeactivate && m_hideOnFocusOut && isVisible()) {
         /*
+         * 刚 show() 出来的那一瞬间也会收到 WindowDeactivate：
+         * 窗口还没拿到焦点，QGuiApplication::applicationState() 这时还不算
+         * ApplicationActive（进程刚启动、或者焦点正在交接）。此时按「应用失活」
+         * 处理的话，面板一弹出来就把自己收走 —— 实测就是
+         * showEvent -> WindowDeactivate -> hideEvent，看起来像「按了热键没反应」。
+         * 所以弹出后 300ms 内的失活事件直接忽略。
+         */
+        if (m_lastShow.isValid() && m_lastShow.elapsed() < kDeactivateGraceMs) {
+            wlTrace(QStringLiteral("WindowDeactivate 忽略（show 后 %1ms）").arg(m_lastShow.elapsed()));
+            return QQuickWindow::event(event);
+        }
+
+        /*
          * 焦点离开主窗口时不要立刻收起：右键菜单 / 设置窗口 / ToolTip 都是本应用
          * 自己的原生弹出窗口，弹出时会先让主窗口收到 WindowDeactivate，但
          * QGuiApplication::applicationState() 仍然是 Qt::ApplicationActive。
@@ -200,7 +224,6 @@ bool LauncherWindow::event(QEvent *event)
         if (QGuiApplication::applicationState() != Qt::ApplicationActive)
             hidePanel();
     }
-
     return QQuickWindow::event(event);
 }
 

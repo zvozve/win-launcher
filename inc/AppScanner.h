@@ -19,6 +19,12 @@ struct ScannedApp
     QString sourcePath;
     QString iconPath;
     QString category;  // AppCategory::classify() 的结果，供启动台的分类标签筛选
+    /*
+     * 归组键：开始菜单里该快捷方式所在的相对目录（"SEGGER\J-Link V7.98b"）。
+     * "同源多入口"（J-Link 一家 40 多个图标）就是靠它折叠的 —— 目录结构现成，
+     * 也是用户自己在开始菜单里整理出来的分组。空串 = 不参与归组。
+     */
+    QString group;
     QString seed;      // 用于生成稳定 ID
     bool removable = false;
 };
@@ -59,6 +65,7 @@ public:
         Kind kind = Link;
         QString path;    // 待解析/取图标的路径
         QString name;    // 显示名（注册表条目用；Link 走文件名）
+        QString group;   // 归组键（开始菜单相对目录），注册表条目为空
         QString seed;    // 稳定 ID 种子
     };
 

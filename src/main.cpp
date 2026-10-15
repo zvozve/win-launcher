@@ -2,13 +2,17 @@
 #include <QDir>
 #include <QFile>
 #include <QApplication>
+#include <QHash>
 #include <QIcon>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMenu>
 #include <QPainter>
 #include <QQmlApplicationEngine>
+#include <QQuickItem>
 #include <QQuickStyle>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QSet>
 #include <QSystemTrayIcon>
 #include <QTextStream>
@@ -16,6 +20,8 @@
 #include <QUrl>
 
 #include <cstdio>
+#include <functional>
+#include <utility>
 #include <QtGlobal>
 
 #include "AppItem.h"
@@ -28,6 +34,7 @@
 #include "EverythingSearch.h"
 #include "HotkeyManager.h"
 #include "LauncherWindow.h"
+#include "UiFont.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
@@ -142,6 +149,16 @@ int main(int argc, char *argv[])
 
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
+    /*
+     * --software：强制走软件渲染（Qt Quick 的 raster 后端）。
+     *
+     * 只给自动化验证用：默认的 D3D11 后端下，PrintWindow 抓到的是空白
+     * （Qt 在独立的交换链上画，窗口 DC 里没有内容），截出来的图没法看。
+     * 软件渲染时内容直接画进窗口 DC，PrintWindow 就能拿到真实界面。
+     */
+    if (app.arguments().contains(QStringLiteral("--software")))
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+
     // 主线程 COM（Shell 图标 / IShellLink / AUMID 激活都要用）
     const HRESULT comHr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     wlTrace("COM ready");
@@ -151,6 +168,7 @@ int main(int argc, char *argv[])
     // 自检会在这里被静默吞掉，什么都不打印，看起来像"跑不起来"。
     const bool diagnosticRun = app.arguments().contains(QStringLiteral("--test-everything"))
                                || app.arguments().contains(QStringLiteral("--dump-apps"))
+                               || app.arguments().contains(QStringLiteral("--dump-groups"))
                                || app.arguments().contains(QStringLiteral("--test-uninstall"));
 
     if (!diagnosticRun) {
@@ -227,6 +245,7 @@ int main(int argc, char *argv[])
         QSet<QString> seen;   // 和 UI 一样按 seed 去重（多个 .lnk 可能指向同一个 exe）
         int kept = 0;
         int nonExe = 0;
+        int grouped = 0;
         for (const AppScanner::Task &t : tasks) {
             ScannedApp a;
             if (!AppScanner::runTask(t, &a))
@@ -238,14 +257,117 @@ int main(int argc, char *argv[])
             const bool isExe = a.target.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive);
             if (!isExe)
                 ++nonExe;
+            if (!a.group.isEmpty())
+                ++grouped;
             ts << (isExe ? "exe  " : "other") << '\t' << a.category << '\t' << a.name << '\t'
-               << a.target << '\t' << a.sourcePath << '\n';
+               << a.target << '\t' << a.sourcePath << '\t' << a.group << '\n';
         }
         ts.flush();
         out.close();
 
-        report(QStringLiteral("tasks=%1 kept=%2 nonExe=%3").arg(tasks.size()).arg(kept).arg(nonExe));
+        report(QStringLiteral("tasks=%1 kept=%2 nonExe=%3 grouped=%4")
+                   .arg(tasks.size())
+                   .arg(kept)
+                   .arg(nonExe)
+                   .arg(grouped));
         report(QStringLiteral("list: ") + outPath);
+        return 0;
+    }
+
+    /*
+     * 自检：--dump-groups  把「同源多入口归组」的结果打成文本报表，不建窗口。
+     *
+     * 调规则（阈值 / 系统文件夹黑名单）之后跑一次，看哪些文件夹被折叠、
+     * 哪些该折却没折 —— 比盯界面数格子直接得多。同时写 winlauncher.groups.txt。
+     */
+    if (app.arguments().contains(QStringLiteral("--dump-groups"))) {
+        attachParentConsole();
+        QFile::remove(diagnosticsPath());
+
+        AppScanner::Options opt;
+        opt.startMenu = true;
+        opt.registry = config.includeRegistry();
+        opt.uwp = false;
+
+        const QList<AppScanner::Task> tasks = AppScanner::buildTasks(opt);
+        QList<ScannedApp> apps;
+        QSet<QString> seen;
+        for (const AppScanner::Task &t : tasks) {
+            ScannedApp a;
+            if (!AppScanner::runTask(t, &a))
+                continue;
+            const QString key = a.target.isEmpty() ? a.seed.toLower() : a.target.toLower();
+            if (key.isEmpty() || seen.contains(key))
+                continue; // 与 UI 的 finishScan 去重方式保持一致
+            seen.insert(key);
+            apps.append(a);
+        }
+
+        const QString outPath = QDir(QCoreApplication::applicationDirPath())
+                                    .filePath(QStringLiteral("winlauncher.groups.txt"));
+        QFile out(outPath);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            report(QStringLiteral("dump failed: ") + outPath);
+            return 0;
+        }
+        QTextStream ts(&out);
+
+        // 纯统计用的归组：不依赖 Controller/AppItem，规则与 rebuildGroups 一致
+        QHash<QString, QList<const ScannedApp *>> buckets;
+        QStringList order;
+        for (const ScannedApp &a : std::as_const(apps)) {
+            if (a.group.isEmpty())
+                continue;
+            if (!buckets.contains(a.group))
+                order.append(a.group);
+            buckets[a.group].append(&a);
+        }
+
+        const int threshold = config.groupThreshold();
+        int folded = 0;
+        int foldedItems = 0;
+        QList<QString> report1; // 折叠的
+        QList<QString> report0; // 没折叠的
+        for (const QString &key : std::as_const(order)) {
+            const QList<const ScannedApp *> members = buckets.value(key);
+            const QString label = key.section(QLatin1Char('\\'), -1);
+            QString line = QStringLiteral("%1\t%2\t%3")
+                               .arg(label, QString::number(members.size()), key);
+            if (members.size() >= threshold) {
+                ++folded;
+                foldedItems += members.size();
+                // 组内主导分类（和 Controller::openGroup / rebuildGroups 同一套算法）
+                QHash<QString, int> counts;
+                QString dominant;
+                int best = 0;
+                for (const ScannedApp *m : members) {
+                    const int n = ++counts[m->category];
+                    if (n > best) {
+                        best = n;
+                        dominant = m->category;
+                    }
+                }
+                ts << "[FOLD] " << line << '\t' << dominant << '\n';
+                for (const ScannedApp *m : members)
+                    ts << "        - " << m->name << "  (" << m->target << ")\n";
+                report1.append(QStringLiteral("%1 (%2)").arg(label).arg(members.size()));
+            } else {
+                report0.append(QStringLiteral("%1 (%2)").arg(label).arg(members.size()));
+                ts << "[keep] " << line << '\n';
+            }
+        }
+        ts.flush();
+        out.close();
+
+        report(QStringLiteral("apps=%1 groups=%2 folded=%3 foldedItems=%4 singles=%5")
+                   .arg(apps.size())
+                   .arg(order.size())
+                   .arg(folded)
+                   .arg(foldedItems)
+                   .arg(apps.size() - foldedItems));
+        report(QStringLiteral("folded: ") + report1.join(QStringLiteral(" | ")));
+        report(QStringLiteral("kept  : ") + report0.join(QStringLiteral(" | ")));
+        report(QStringLiteral("report: ") + outPath);
         return 0;
     }
 
@@ -289,10 +411,27 @@ int main(int argc, char *argv[])
 
     HotkeyManager hotkeys;
     Controller controller(&config, &everything);
+    UiFont uiFont;
+
+    /*
+     * --keep-open：强制关掉「失焦收起」。
+     * 给自动化验证用 —— 脚本点完面板后焦点很容易跑到别的窗口，面板一收
+     * 截图就全空了。以前是靠直接改 %LOCALAPPDATA% 的 config.json，
+     * 但那个目录不一定可写（沙箱），改成进程内覆盖，不落盘。
+     */
+    if (app.arguments().contains(QStringLiteral("--keep-open")))
+        config.setHideOnFocusOut(false);
+
+    // 菜单图标字体是否可用：不可用时 QML 会退回纯文字菜单（不会出现豆腐块）
+    wlTrace(QStringLiteral("UiFont: menuIconFamily='%1' available=%2")
+                .arg(uiFont.menuIconFamily())
+                .arg(uiFont.menuIconsAvailable() ? 1 : 0));
 
     qmlRegisterType<LauncherWindow>("WinLauncher.Core", 1, 0, "LauncherWindow");
     qmlRegisterSingletonInstance("WinLauncher.Core", 1, 0, "Ctrl", &controller);
     qmlRegisterSingletonInstance("WinLauncher.Core", 1, 0, "AppConfig", &config);
+    // 菜单图标字体（Segoe Fluent Icons）的可用性 + 字形码点
+    qmlRegisterSingletonInstance("WinLauncher.Core", 1, 0, "UiFont", &uiFont);
     wlTrace("qml types registered");
 
     QQmlApplicationEngine engine;
@@ -304,7 +443,9 @@ int main(int argc, char *argv[])
     engine.addImageProvider(QStringLiteral("wlbg"), backdrop);
     controller.attachBackdropProvider(backdrop);
 
-    engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
+    engine.load(QUrl(app.arguments().contains(QStringLiteral("--qml-test"))
+                         ? QStringLiteral("qrc:/qml/LayoutTest.qml")
+                         : QStringLiteral("qrc:/qml/Main.qml")));
     wlTrace("qml loaded");
     if (engine.rootObjects().isEmpty()) {
         qCritical("QML 加载失败，程序退出");
@@ -313,12 +454,295 @@ int main(int argc, char *argv[])
 
     auto *window = qobject_cast<LauncherWindow *>(engine.rootObjects().constFirst());
     if (!window) {
+        // --qml-test 加载的是普通 Window，不是 LauncherWindow：只验证布局就到此为止
+        if (app.arguments().contains(QStringLiteral("--qml-test"))) {
+            auto *w = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+            if (!w)
+                return 1;
+            QTimer::singleShot(2500, w, [w] {
+                const QString out = QDir(QCoreApplication::applicationDirPath())
+                                        .filePath(QStringLiteral("shot-qmltest.png"));
+                const QImage shot = w->grabWindow();
+                shot.save(out);
+                QStringList found;
+                std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+                    if (!item)
+                        return;
+                    if (item->objectName() == QLatin1String("testLabel")) {
+                        found << QStringLiteral("%1[%2x%3] vis=%4 text='%5'")
+                                     .arg(item->objectName())
+                                     .arg(int(item->width()))
+                                     .arg(int(item->height()))
+                                     .arg(item->isVisible() ? 1 : 0)
+                                     .arg(item->property("text").toString());
+                    }
+                    const QList<QQuickItem *> kids = item->childItems();
+                    for (QQuickItem *kid : kids)
+                        walk(kid);
+                };
+                walk(w->contentItem());
+                wlTrace(QStringLiteral("qmltest: %1 labels, saved %2")
+                            .arg(found.size())
+                            .arg(out));
+                for (const QString &s : std::as_const(found))
+                    wlTrace(QStringLiteral("  %1").arg(s));
+                QCoreApplication::quit();
+            });
+            return app.exec();
+        }
         qCritical("QML 根对象不是 LauncherWindow");
         return 1;
     }
 
     controller.attachWindow(window);
     wlTrace("window attached");
+
+    /*
+     * --open-folder：扫描完成后自动进第一个文件夹。
+     * 给自动化验证用 —— 想截「组内视图」，靠脚本点坐标既不准也脆弱，
+     * 这里直接调 Ctrl.openGroup()，走的是和点瓦片完全一样的代码路径。
+     */
+    if (app.arguments().contains(QStringLiteral("--open-folder"))) {
+        auto *t = new QTimer(window);
+        t->setInterval(700);
+        QObject::connect(t, &QTimer::timeout, window, [&controller, t] {
+            const QList<QObject *> tiles = controller.gridItems();
+            for (QObject *tile : tiles) {
+                if (tile->property("isFolder").toBool()) {
+                    const QString key = tile->property("groupKey").toString();
+                    wlTrace(QStringLiteral("open-folder: %1").arg(key));
+                    controller.openGroup(key);
+                    t->stop();
+                    return;
+                }
+            }
+        });
+        t->start();
+    }
+
+    /*
+     * --dump-icons：把网格的渲染结果和每个瓦片的图标状态都落盘。
+     *
+     * 排查「界面出来了但图标是空白」用的 —— 光看截图分不清是
+     *   「QML 没绑到 app」/「图片路径不对」/「异步解码还没完」/
+     *   「其实画好了，是抓图方式（BitBlt/PrintWindow）拿不到 GPU 合成的内容」。
+     * 所以这里两手都有：窗口 grabWindow() 存 PNG（Qt 自己合成的画面，
+     * 不含窗口外框，但内容是准的）+ 逐格打印 Image.status/source。
+     *
+     * 只给自动化验证用，正常启动不走这条路。
+     */
+    if (app.arguments().contains(QStringLiteral("--dump-icons"))) {
+        /*
+         * 面板是热键按下去才弹的，脚本按热键的时机对不齐，所以用
+         * 「面板一可见就抓一张」的轮询。grabWindow 抓的是 Qt 自己合成的画面，
+         * 不受 BitBlt / PrintWindow 在锁屏与 GPU 合成下的限制。
+         *
+         * 注意：grabWindow 必须让面板处于可见状态，而且**宽度不是 16 的整数倍时
+         * D3D 后端会翻车**（Qt 6 已知问题），所以抓之前临时把宽度 +16 再改回来。
+         */
+        auto *dumpState = new QObject(window);
+        dumpState->setProperty("shots", 0);
+        dumpState->setProperty("sawVisible", false);
+
+        const auto dumpIcons = [window, dumpState](const QString &suffix) {
+            const QString path = QDir(QCoreApplication::applicationDirPath())
+                                     .filePath(QStringLiteral("winlauncher.icons%1.txt").arg(suffix));
+            QFile f(path);
+            if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+                return;
+            QTextStream ts(&f);
+            /*
+             * 自己走可视树（childItems），不要用 QObject::findChildren：
+             * QML 组件内部声明的对象不在 QObject 的父子链上，
+             * findChildren("appTile") 会返回 0 —— 别问我怎么知道的。
+             */
+            QList<QQuickItem *> tiles;
+            std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+                if (!item)
+                    return;
+                if (item->objectName() == QLatin1String("appTile"))
+                    tiles.append(item);
+                const QList<QQuickItem *> kids = item->childItems();
+                for (QQuickItem *kid : kids)
+                    walk(kid);
+            };
+            walk(window->contentItem());
+
+            /*
+             * GridView 只给「可见区间」的 delegate 尺寸，其余是 0×0；而且 QML 里
+             * 直接声明 `width: grid.cellWidth` 的 delegate，QObject 树上看不到尺寸。
+             * 所以只统计有尺寸的那些，免得打点里全是 0 让人误判。
+             */
+            QList<QQuickItem *> live;
+            for (QQuickItem *t : std::as_const(tiles)) {
+                if (t->width() > 0)
+                    live.append(t);
+            }
+            tiles = live;
+
+            ts << "appTile items: " << tiles.size() << '\n';
+            int ready = 0;
+            int nullSource = 0;
+            for (QQuickItem *tile : tiles) {
+                auto *img = tile->findChild<QQuickItem *>(QStringLiteral("tileIcon"));
+                const QString src = img ? img->property("source").toString() : QString();
+                const int st = img ? img->property("status").toInt() : -1;
+                const QString name = tile->property("appName").toString();
+                const QObject *app = tile->property("app").value<QObject *>();
+                const QString iconPath = app ? app->property("iconPath").toString() : QStringLiteral("(no app)");
+                if (st == 1 /*Ready*/)
+                    ++ready;
+                if (src.isEmpty())
+                    ++nullSource;
+                ts << name << '\t' << "status=" << st << '\t' << "iconPath=" << iconPath
+                   << '\t' << src << '\n';
+            }
+            ts << "ready=" << ready << " emptySource=" << nullSource << '\n';
+            ts.flush();
+            f.close();
+            wlTrace(QStringLiteral("icons: appTile=%1 ready=%2 empty=%3 shots=%4")
+                        .arg(tiles.size())
+                        .arg(ready)
+                        .arg(nullSource)
+                        .arg(dumpState->property("shots").toInt()));
+        };
+
+        const auto grab = [window](const QString &name) {
+            const bool pad = window->width() % 16 != 0;
+            const QSize keep(window->width(), window->height());
+            if (pad)
+                window->setWidth(keep.width() + 16);
+            const QImage shot = window->grabWindow();
+            if (pad) {
+                window->setWidth(keep.width());
+                window->setHeight(keep.height());
+            }
+            const QString out = QDir(QCoreApplication::applicationDirPath()).filePath(name);
+            if (shot.save(out))
+                wlTrace(QStringLiteral("grab: %1 (%2x%3)")
+                            .arg(name).arg(shot.width()).arg(shot.height()));
+        };
+
+        // 不自动弹：面板必须「脚本按热键」才出现。以前这里 singleShot(300) 弹一次，
+        // 结果和脚本的热键变成「开→关」两次 toggle，面板瞬间又收起，
+        // 打点全是 tiles=0（排查了半天，记在这儿）
+        auto *poll = new QTimer(window);
+        poll->setInterval(1200);
+        QObject::connect(poll, &QTimer::timeout, window, [window, grab, dumpState, dumpIcons] {
+            const bool visible = window->isVisible();
+            if (visible && !dumpState->property("sawVisible").toBool()) {
+                dumpState->setProperty("sawVisible", true);
+                const int n = dumpState->property("shots").toInt() + 1;
+                dumpState->setProperty("shots", n);
+                // 面板刚可见时图标可能还在异步解码，隔 1.5s 再抓一张并打点
+                grab(QStringLiteral("shot-panel-%1.png").arg(n));
+                // 时间线：面板可见后 0.5 / 1.5 / 3 / 6 / 10 秒各抓一张，
+                // 用来看「到底什么时候才真正画出来」——
+                // 离线截图里出现过「有图标没名字」和「什么都没有」两种互相矛盾的画面。
+                for (int k : {0, 1, 2, 3, 4}) {
+                    const int delay = (k == 0) ? 500 : (k == 1 ? 1500 : (k == 2 ? 3000 : (k == 3 ? 6000 : 10000)));
+                    QTimer::singleShot(delay, window, [grab, dumpIcons, n, k, window, delay] {
+                        grab(QStringLiteral("shot-t%1-%2.png").arg(delay).arg(n));
+                        // 只打几何：标签宽度是 0 还是正常值，一眼就知道是布局问题还是绑定问题
+                        int withSize = 0;
+                        int labelOk = 0;
+                        QString first;
+                        std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+                            if (!item)
+                                return;
+                            if (item->objectName() == QLatin1String("appTile") && item->width() > 0) {
+                                ++withSize;
+                                auto *label = item->findChild<QQuickItem *>(QStringLiteral("tileLabel"));
+                                const int lw = label ? int(label->width()) : -1;
+                                if (lw > 0)
+                                    ++labelOk;
+                                if (first.isEmpty() && label)
+                                    first = QStringLiteral("tile=%1x%2 label=%3x%4 y=%5 text='%6'")
+                                                .arg(int(item->width())).arg(int(item->height()))
+                                                .arg(lw).arg(int(label->height()))
+                                                .arg(int(label->y()))
+                                                .arg(label->property("text").toString());
+                            }
+                            const QList<QQuickItem *> kids = item->childItems();
+                            for (QQuickItem *kid : kids)
+                                walk(kid);
+                        };
+                        walk(window->contentItem());
+                        wlTrace(QStringLiteral("geometry +%1ms: sized tiles=%2, labels width>0=%3 | %4")
+                                    .arg(delay).arg(withSize).arg(labelOk).arg(first));
+
+                        /*
+                         * 可视树 dump：walk 找不到 appTile 时用来判断
+                         *   「树里压根没有这个节点」还是「objectName 对不上」。
+                         * 只打有 objectName 的节点，层级用缩进表示。
+                         */
+                        QString tree;
+                        int nodes = 0;
+                        std::function<void(QQuickItem *, int)> dump = [&](QQuickItem *it, int depth) {
+                            if (!it || nodes > 120)
+                                return;
+                            const QString on = it->objectName();
+                            if (!on.isEmpty()) {
+                                ++nodes;
+                                tree += QStringLiteral("\n  %1%2[%3x%4] vis=%5")
+                                            .arg(QString(depth * 2, QLatin1Char(' ')))
+                                            .arg(on)
+                                            .arg(int(it->width()))
+                                            .arg(int(it->height()))
+                                            .arg(it->isVisible() ? 1 : 0);
+                            }
+                            const QList<QQuickItem *> kids = it->childItems();
+                            for (QQuickItem *kid : kids)
+                                dump(kid, on.isEmpty() ? depth : depth + 1);
+                        };
+                        dump(window->contentItem(), 0);
+                        wlTrace(QStringLiteral("tree +%1ms: named nodes=%2%3").arg(delay).arg(nodes).arg(tree));
+
+                        /*
+                         * 根探测：contentItem() 走不到 QML 树时，看看到底挂在哪。
+                         * findChildren 走的是 QObject 父子链，和可视树是两条路。
+                         */
+                        auto *ci = window->contentItem();
+                        const auto byObj = window->findChildren<QQuickItem *>();
+                        QString objNames;
+                        int objNamed = 0;
+                        for (QQuickItem *it : byObj) {
+                            if (it->objectName().isEmpty())
+                                continue;
+                            ++objNamed;
+                            if (objNamed <= 8)
+                                objNames += QStringLiteral(" %1[%2x%3]")
+                                                .arg(it->objectName())
+                                                .arg(int(it->width()))
+                                                .arg(int(it->height()));
+                        }
+                        wlTrace(QStringLiteral("root +%1ms: contentItem=%2 ciKids=%3 "
+                                               "windowKids=%4 qobjItems=%5 named=%6 |%7")
+                                    .arg(delay)
+                                    .arg(ci ? QStringLiteral("ok") : QStringLiteral("NULL"))
+                                    .arg(ci ? ci->childItems().size() : -1)
+                                    .arg(window->children().size())
+                                    .arg(byObj.size())
+                                    .arg(objNamed)
+                                    .arg(objNames));
+                        if (k == 4)
+                            dumpIcons(QStringLiteral("-panel%1").arg(n));
+                    });
+                }
+            } else if (!visible) {
+                dumpState->setProperty("sawVisible", false);
+            }
+        });
+        poll->start();
+
+        // 面板弹出后再打点：面板没弹时网格是空的（tiles=0），别把它当结论
+        QTimer::singleShot(9000, window, [dumpIcons] { dumpIcons(QString()); });
+        // 最后再来一次：图标是分批提取 + 异步解码的，早打点会看到一堆 status=0
+        QTimer::singleShot(25000, window, [dumpIcons, grab] {
+            dumpIcons(QStringLiteral("-final"));
+            grab(QStringLiteral("shot-final.png"));
+        });
+    }
 
     // 热键需要窗口已有原生句柄
     window->setHotkeyManager(&hotkeys);

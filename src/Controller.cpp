@@ -19,6 +19,7 @@
 #include <QVariantMap>
 #include <QWindow>
 
+#include <algorithm>
 #include <utility>
 
 #include "AppItem.h"
@@ -27,6 +28,7 @@
 #include "BackdropBlur.h"
 #include "BackdropProvider.h"
 #include "DebugTrace.h"
+#include "GroupTile.h"
 #include "HotkeyManager.h"
 #include "IconProvider.h"
 #include "Launcher.h"
@@ -76,6 +78,8 @@ Controller::Controller(Config *config, EverythingSearch *everything, QObject *pa
     connect(m_config, &Config::appCategoryChanged, this, &Controller::rebuildVisible);
     connect(m_config, &Config::searchCategoryChanged, this, &Controller::rebuildVisible);
     connect(m_config, &Config::searchSourceChanged, this, &Controller::rebuildVisible);
+    // 归组阈值改了要立刻重新折叠（设置窗口里是个数字选择）
+    connect(m_config, &Config::groupThresholdChanged, this, &Controller::rebuildVisible);
 
     loadLayout();
     rebuildVisible();
@@ -357,8 +361,8 @@ void Controller::rebuildVisible()
     const bool typeFiltered = !allowed.isEmpty() && searchCat != QLatin1String("app");
 
     const QString needle = m_query.trimmed();
-    QList<QObject *> filtered;
-    filtered.reserve(m_apps.size());
+    QList<QObject *> matched;
+    matched.reserve(m_apps.size());
     for (QObject *obj : std::as_const(m_apps)) {
         auto *item = qobject_cast<AppItem *>(obj);
         if (!item)
@@ -371,9 +375,96 @@ void Controller::rebuildVisible()
             && !item->target().contains(needle, Qt::CaseInsensitive)) {
             continue;
         }
-        filtered.append(obj);
+        matched.append(obj);
     }
-    m_visible = filtered;
+    m_visible = matched;
+
+    /*
+     * 状态行跟着筛选走，否则按了「开发」下面还写「共 221 个应用」，
+     * 看起来就像筛选没生效。动作消息（已启动 X / 已移除 X）不由这里管，
+     * 它们在下一次筛选变化前一直留着。
+     */
+    if (!needle.isEmpty())
+        setStatus(QStringLiteral("匹配「%1」· %2 个").arg(needle).arg(m_visible.size()));
+    else if (categoryFiltered)
+        setStatus(QStringLiteral("分类「%1」· %2 个").arg(AppCategory::label(appCat)).arg(m_visible.size()));
+    else
+        setStatus(QStringLiteral("共 %1 个应用").arg(m_visible.size()));
+
+    /*
+     * 4.5) 归组：把「应用条目」折成网格格子。
+     *
+     * 文件夹只在**没有搜索词**时出现。理由：搜索是「我要找某个东西」，
+     * 结果被收进文件夹里看不到名字反而更差；而且全盘搜索（Everything）的命中
+     * 本来就是平铺的，两边不一致会让人以为搜丢了。
+     */
+    QString openGroup = m_openGroup;
+    // 搜索时自动退出文件夹（上面那条原则），列表会立刻铺开
+    if (!needle.isEmpty())
+        openGroup.clear();
+
+    QList<QObject *> tiles;
+    if (!openGroup.isEmpty()) {
+        // 进到文件夹里：只列这一组的成员，不再嵌套文件夹
+        for (QObject *obj : std::as_const(matched)) {
+            if (auto *item = qobject_cast<AppItem *>(obj)) {
+                if (item->group() == openGroup)
+                    tiles.append(item);
+            }
+        }
+        // 组空了（成员全被移除 / 分类切走）就自动退回顶层
+        if (tiles.isEmpty())
+            openGroup.clear();
+    }
+    if (openGroup.isEmpty())
+        rebuildGroups(matched, &tiles);
+
+    /*
+     * 重建网格 model 的所有权：上一轮的 GroupTile 整批换掉。
+     *
+     * 用 deleteLater 而不是 delete：QML 的 GridView 可能还要引用旧的瓦片到本轮
+     * 事件循环结束（这是 Qt 官方对「删掉 model 里的 QObject」的推荐做法）。
+     * 顺手把 parent 摘掉，避免 Controller 析构时再删一次。
+     */
+    for (GroupTile *tile : std::as_const(m_grid)) {
+        tile->setParent(nullptr);
+        tile->deleteLater();
+    }
+    m_grid.clear();
+    m_grid.reserve(tiles.size());
+    for (QObject *obj : std::as_const(tiles)) {
+        if (auto *tile = qobject_cast<GroupTile *>(obj)) {
+            tile->setParent(this);
+            m_grid.append(tile);
+        }
+    }
+
+    const bool groupChanged = (m_openGroup != openGroup);
+    m_openGroup = openGroup;
+
+    /*
+     * 网格内容的打点：归组是「看得见但不好断言」的东西，--trace 里留一份
+     * 「N 格 / M 个文件夹」+ 前几个文件夹的名字，排查时不用猜。
+     */
+    {
+        int folderCount = 0;
+        QStringList folders;
+        for (GroupTile *tile : std::as_const(m_grid)) {
+            if (!tile->isFolder())
+                continue;
+            ++folderCount;
+            if (folders.size() < 6)
+                folders.append(QStringLiteral("%1(%2)").arg(tile->label()).arg(tile->count()));
+        }
+        wlTrace(QStringLiteral("grid: %1 tiles = %2 apps + %3 folders [%4]%5")
+                    .arg(m_grid.size())
+                    .arg(m_grid.size() - folderCount)
+                    .arg(folderCount)
+                    .arg(folders.join(QStringLiteral(", ")))
+                    .arg(openGroup.isEmpty()
+                             ? QString()
+                             : QStringLiteral("  open=%1 (%2)").arg(openGroupLabel()).arg(m_grid.size())));
+    }
 
     // 5) Everything 全盘结果（可选搜索源，见 doc/2.方案设计.md）
     const QList<QObject *> previous = m_searchResults;
@@ -415,7 +506,158 @@ void Controller::rebuildVisible()
     if (appsListChanged)
         emit appsChanged();
     emit visibleAppsChanged();
+    emit gridItemsChanged();
+    if (groupChanged)
+        emit openGroupChanged();
     emit searchResultsChanged();
+}
+
+/*
+ * 归组：把过滤后的应用列表折成「应用 + 文件夹」的格子列表。
+ *
+ * 规则（都是从本机实测数据反推的）：
+ *
+ *   1. 只有开始菜单里有目录结构的才有 group（注册表条目一律为空）；
+ *   2. **组内成员必须全部在列表里**才折叠。搜索 / 分类筛选下经常只剩组里的
+ *      一两条，这时如果还显示文件夹，点进去只有一个图标 —— 比不折叠更糟；
+ *   3. 成员数 >= groupThreshold（默认 3）才折叠。本机 2 个一组的很多
+ *      （卸载残留、同软件的主程序 + 帮助），折起来反而多一次点击；
+ *   4. 文件夹的分类 = 组内主导分类，这样顶部「开发」标签一按，
+ *      J-Link / MSYS2 这些文件夹跟着一起进来（本机实测这些组都是同分类的）。
+ *
+ * 输出顺序：按「组内第一个成员」在输入列表里的位置排列，保持扫描顺序，
+ * 分组不会让网格跳来跳去。
+ */
+void Controller::rebuildGroups(const QList<QObject *> &matched, QList<QObject *> *tilesOut)
+{
+    if (!tilesOut)
+        return;
+
+    const int threshold = qMax(2, m_config->groupThreshold());
+
+    // 按归组键收集（保持首次出现的顺序）
+    QHash<QString, QList<AppItem *>> buckets;
+    QStringList order;
+    QHash<QString, int> total; // 该组在**完整基础列表**里的成员数（判断是否被筛掉过）
+
+    for (QObject *obj : std::as_const(m_apps)) {
+        if (auto *item = qobject_cast<AppItem *>(obj)) {
+            if (!item->group().isEmpty())
+                ++total[item->group()];
+        }
+    }
+    for (QObject *obj : std::as_const(matched)) {
+        auto *item = qobject_cast<AppItem *>(obj);
+        if (!item)
+            continue;
+        const QString key = item->group();
+        if (key.isEmpty())
+            continue;
+        if (!buckets.contains(key))
+            order.append(key);
+        buckets[key].append(item);
+    }
+
+    QSet<QString> folded;
+    for (const QString &key : std::as_const(order)) {
+        const QList<AppItem *> members = buckets.value(key);
+        if (members.size() < threshold)
+            continue;
+        if (members.size() < total.value(key))
+            continue; // 组里有成员被筛掉了（搜索 / 分类），不折叠
+        folded.insert(key);
+    }
+
+    // 输出：先按输入顺序走一遍，遇到该折叠的组只在第一次出现时放一个文件夹瓦片
+    QSet<QString> emitted;
+    for (QObject *obj : std::as_const(matched)) {
+        auto *item = qobject_cast<AppItem *>(obj);
+        if (!item)
+            continue;
+        const QString key = item->group();
+        if (key.isEmpty() || !folded.contains(key)) {
+            tilesOut->append(new GroupTile(item, this));
+            continue;
+        }
+        if (emitted.contains(key))
+            continue; // 组已经在前面放过了
+        emitted.insert(key);
+        tilesOut->append(GroupTile::makeFolder(key, item->groupLabel(), buckets.value(key), this));
+    }
+
+    /*
+     * 按名字排序（用户要求「按字母排」）。
+     *
+     * 放在归组之后、对**最终格子列表**排一次：文件夹用它的组名、应用用应用名，
+     * 两边混在同一序列里比较，所以 A 开头的应用不会被 12 个文件夹全挤到后面。
+     * localeAwareCompare 而不是裸 <=：中文名按拼音排，纯 ASCII 名按字母排，
+     * 直接比 code point 的话中文会被丢到最末尾。
+     */
+    std::stable_sort(tilesOut->begin(), tilesOut->end(), [](QObject *a, QObject *b) {
+        auto *ta = qobject_cast<GroupTile *>(a);
+        auto *tb = qobject_cast<GroupTile *>(b);
+        if (!ta || !tb)
+            return false;
+        return QString::localeAwareCompare(ta->label(), tb->label()) < 0;
+    });
+}
+
+QList<QObject *> Controller::gridItems() const
+{
+    QList<QObject *> out;
+    out.reserve(m_grid.size());
+    for (GroupTile *tile : m_grid)
+        out.append(tile);
+    return out;
+}
+
+QString Controller::openGroupLabel() const
+{
+    if (m_openGroup.isEmpty())
+        return QString();
+    const int slash = m_openGroup.lastIndexOf(QLatin1Char('\\'));
+    return slash < 0 ? m_openGroup : m_openGroup.mid(slash + 1);
+}
+
+/*
+ * 进文件夹。顺带把顶部分类切到这个文件夹的主导分类 —— 面板顶部的标签条因此
+ * 会高亮成「开发」，用户一眼能看出自己在哪一层；返回顶层时不用还原，
+ * 顶层的分类筛选本来就该由用户自己控制。
+ */
+void Controller::openGroup(const QString &groupKey)
+{
+    if (groupKey.isEmpty() || groupKey == m_openGroup)
+        return;
+
+    QString dominant;
+    int best = 0;
+    QHash<QString, int> counts;
+    for (QObject *obj : std::as_const(m_apps)) {
+        auto *item = qobject_cast<AppItem *>(obj);
+        if (!item || item->group() != groupKey)
+            continue;
+        const int n = ++counts[item->category()];
+        if (n > best) {
+            best = n;
+            dominant = item->category();
+        }
+    }
+    if (best == 0)
+        return; // 组不存在（可能刚被清掉）
+
+    m_openGroup = groupKey;
+    if (!dominant.isEmpty() && dominant != m_config->appCategory())
+        m_config->setAppCategory(dominant); // 它的 changed 信号会带回一次重建
+    else
+        rebuildVisible();
+}
+
+void Controller::closeGroup()
+{
+    if (m_openGroup.isEmpty())
+        return;
+    m_openGroup.clear();
+    rebuildVisible();
 }
 
 /*

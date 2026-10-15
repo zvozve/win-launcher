@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import WinLauncher.Core
 
 /*
  * 网格里的单个应用图标。
@@ -12,6 +13,10 @@ import QtQuick.Controls
 Item {
     id: root
 
+    // 诊断用（--dump-icons 会按这两个 objectName 找节点）
+    objectName: "appTile"
+    readonly property string appName: app ? app.name : ""
+
     property var app: null
     property bool dark: true
     property color textColor: dark ? "#F2F2F7" : "#1C1C1E"
@@ -23,61 +28,30 @@ Item {
     signal removeRequested()
 
     readonly property bool hasIcon: app !== null && image.status === Image.Ready
-    // 7×4 的格子大约 165×140，图标取到 ~62 才接近 macOS 启动台的观感
+    // 7 列的格子大约 148×176，图标取到 ~62 才接近 macOS 启动台的观感
     readonly property int iconSize: Math.max(
-                                        28, Math.min(64, Math.round(Math.min(width * 0.38,
-                                                                            height * 0.48))))
+                                        32, Math.min(72, Math.round(Math.min(width * 0.44,
+                                                                            height * 0.42))))
 
     // ---- 右键菜单 ----
     Menu {
         id: contextMenu
 
         /*
-         * Win11 菜单项：高 32、圆角 4、hover 是淡灰高亮、文字 13px。
-         *
-         * 左右各留 4px 内边距（就是下面 background 里 anchors.margins 那 4）：
-         *   - 菜单项不能顶到容器边上，否则高亮块的直角会盖住容器的圆角，
-         *     表现就是「第一项/最后一项 hover 时圆角变直角」；
-         *   - 同时这 4px 也让文字有了呼吸空间，不会贴左边。
-         * 高亮块本身再给 4px 圆角，hover 时看到的是一个圆角小条，和 Win11 一致。
+         * 菜单项统一走 WinMenuItem（图标 + 文字，Win11 观感）。
+         * 图标是 Segoe Fluent Icons 的字形 —— 本机没这个字体时
+         * UiFont.menuIconsAvailable 为 false，图标自动收起，只剩文字。
          */
-        delegate: MenuItem {
-            id: menuEntry
-
-            implicitHeight: 32
-            implicitWidth: 176
-
-            contentItem: Text {
-                text: menuEntry.text
-                font.pixelSize: 13
-                color: root.dark ? "#FFFFFF" : "#1A1A1A"
-                verticalAlignment: Text.AlignVCenter
-                // 与外层 4px 内边距叠加后，文字左边缘离菜单边框 12px
-                leftPadding: 8
-                rightPadding: 8
-                elide: Text.ElideRight
-            }
-
-            background: Rectangle {
-                anchors.fill: parent
-                anchors.margins: 4
-                radius: 4
-                color: menuEntry.highlighted
-                       ? (root.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06))
-                       : "transparent"
-
-                Behavior on color {
-                    ColorAnimation { duration: 80 }
-                }
-            }
+        delegate: WinMenuItem {
+            dark: root.dark
         }
 
         // Win11 菜单容器：圆角 8、近实色底、1px 淡边。
-        // 宽度写死 184（菜单项 176 + 两侧各 4 内缩）；高度量 contentItem 的
+        // 宽度写死 196（菜单项 188 + 两侧各 4 内缩）；高度量 contentItem 的
         // 内容高（这个是可靠的）再加边框。别用 contentItem.implicitWidth ——
         // Menu 的 contentItem 横向 implicitWidth 是 0，拿来算宽度菜单会缩没。
         background: Rectangle {
-            implicitWidth: 184
+            implicitWidth: 196
             implicitHeight: Math.max(32, (contentItem ? contentItem.implicitHeight : 0) + 2)
             radius: 8
             color: root.dark ? "#2C2C2C" : "#F9F9F9"
@@ -90,42 +64,52 @@ Item {
             implicitHeight: 9
 
             contentItem: Rectangle {
-                implicitWidth: 176
+                implicitWidth: 188
                 implicitHeight: 1
                 anchors.margins: 4
                 color: root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
             }
         }
 
-        MenuItem {
+        WinMenuItem {
             text: qsTr("打开")
+            iconGlyph: String.fromCharCode(UiFont.Open)
+            dark: root.dark
             onTriggered: root.activated()
         }
 
         MenuSep {}
 
-        MenuItem {
+        WinMenuItem {
             text: qsTr("以管理员身份打开")
+            iconGlyph: String.fromCharCode(UiFont.Admin)
+            dark: root.dark
             onTriggered: root.adminRequested()
         }
 
-        MenuItem {
+        WinMenuItem {
             text: qsTr("打开文件所在位置")
+            iconGlyph: String.fromCharCode(UiFont.Reveal)
+            dark: root.dark
             onTriggered: root.revealRequested()
         }
 
         MenuSep {}
 
         // 省略号表示会再开一个窗口（软件自己的卸载向导）
-        MenuItem {
+        WinMenuItem {
             text: qsTr("卸载此程序…")
+            iconGlyph: String.fromCharCode(UiFont.Uninstall)
+            dark: root.dark
             onTriggered: root.uninstallRequested()
         }
 
         MenuSep {}
 
-        MenuItem {
+        WinMenuItem {
             text: qsTr("从启动台移除")
+            iconGlyph: String.fromCharCode(UiFont.Remove)
+            dark: root.dark
             onTriggered: root.removeRequested()
         }
     }
@@ -152,58 +136,69 @@ Item {
         }
     }
 
-    Column {
-        anchors.centerIn: parent
-        width: parent.width - 14
-        spacing: 7
+    /*
+     * 图标 + 名称，用显式锚点排，**不要用 Column**。
+     *
+     * QML 的 positioner（Column / Row）里再给子项挂 anchors.horizontalCenter，
+     * positioner 会把该子项的隐式尺寸当 0 来算 —— 实测后果就是
+     * 「图标掉到格子顶部、名字整行不显示」。显式锚点没有这个坑。
+     */
+    Item {
+        id: iconBox
+        width: root.iconSize
+        height: root.iconSize
+        anchors.horizontalCenter: parent.horizontalCenter
+        // 图标 + 名字作为一组垂直居中：图标整体上移一个固定量，给名字腾位
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenterOffset: -12
 
-        Item {
-            width: root.iconSize
-            height: root.iconSize
-            anchors.horizontalCenter: parent.horizontalCenter
+        // 没有图标时的占位块
+        Rectangle {
+            objectName: "tilePlaceholder"
+            anchors.fill: parent
+            radius: Math.round(root.iconSize * 0.24)
+            visible: !root.hasIcon
+            color: root.dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.12)
 
-            // 没有图标时的占位块
-            Rectangle {
-                anchors.fill: parent
-                radius: Math.round(root.iconSize * 0.24)
-                visible: !root.hasIcon
-                color: root.dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.12)
-
-                Text {
-                    anchors.centerIn: parent
-                    text: root.app ? root.app.name.charAt(0).toUpperCase() : "?"
-                    font.pixelSize: Math.round(root.iconSize * 0.44)
-                    font.bold: true
-                    color: root.textColor
-                    opacity: 0.75
-                }
-            }
-
-            Image {
-                id: image
-                anchors.fill: parent
-                source: root.app ? root.app.iconUrl : ""
-                sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
-                fillMode: Image.PreserveAspectFit
-                smooth: true
-                asynchronous: true
+            Text {
+                anchors.centerIn: parent
+                text: root.app ? root.app.name.charAt(0).toUpperCase() : "?"
+                font.pixelSize: Math.round(root.iconSize * 0.44)
+                font.bold: true
+                color: root.textColor
+                opacity: 0.75
             }
         }
 
-        Text {
-            id: label
-            width: parent.width
-            text: root.app ? root.app.name : ""
-            color: root.textColor
-            font.pixelSize: 11
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
-            maximumLineCount: 2
-            elide: Text.ElideRight
-            // 行距 0.95 会把两行名字压在一起，1.05 才是可读的行距
-            lineHeight: 1.05
-            lineHeightMode: Text.ProportionalHeight
+        Image {
+            id: image
+            objectName: "tileIcon"
+            anchors.fill: parent
+            source: root.app ? root.app.iconUrl : ""
+            sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            asynchronous: true
         }
+    }
+
+    Text {
+        id: label
+        objectName: "tileLabel"
+        anchors.top: iconBox.bottom
+        anchors.topMargin: 6
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: parent.width - 16
+        text: "W" + Math.round(root.width) + "x" + Math.round(root.height)
+        color: "#FF0000"
+        font.pixelSize: 12
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.Wrap
+        maximumLineCount: 2
+        elide: Text.ElideRight
+        // 行距 0.95 会把两行名字压在一起，1.05 才是可读的行距
+        lineHeight: 1.05
+        lineHeightMode: Text.ProportionalHeight
     }
 
     MouseArea {

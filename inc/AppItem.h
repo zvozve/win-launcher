@@ -25,6 +25,13 @@ class AppItem : public QObject
     Q_PROPERTY(QString iconPath    READ iconPath    WRITE setIconPath    NOTIFY iconPathChanged)
     Q_PROPERTY(QUrl    iconUrl     READ iconUrl                          NOTIFY iconPathChanged)
     Q_PROPERTY(QString category    READ category    WRITE setCategory    NOTIFY categoryChanged)
+    /*
+     * 归组键（同源多入口）。来源是开始菜单里快捷方式所在的相对目录
+     * （如 "SEGGER\J-Link V7.98b"），空串表示「不参与归组」。
+     * groupLabel 是给人看的最后一段（"J-Link V7.98b"）。
+     */
+    Q_PROPERTY(QString group       READ group       WRITE setGroup       NOTIFY groupChanged)
+    Q_PROPERTY(QString groupLabel  READ groupLabel                       NOTIFY groupChanged)
     Q_PROPERTY(bool    removable   READ removable   WRITE setRemovable   NOTIFY removableChanged)
     Q_PROPERTY(bool    isUwp       READ isUwp                            NOTIFY kindChanged)
 
@@ -48,6 +55,8 @@ public:
     QString iconPath() const { return m_iconPath; }
     QUrl iconUrl() const;
     QString category() const { return m_category; }
+    QString group() const { return m_group; }
+    QString groupLabel() const;
     bool removable() const { return m_removable; }
     bool isUwp() const { return m_kind == KindUwp; }
 
@@ -60,6 +69,7 @@ public:
     void setSourcePath(const QString &v);
     void setIconPath(const QString &v);
     void setCategory(const QString &v);
+    void setGroup(const QString &v);
     void setRemovable(bool v);
 
     // 稳定 ID：优先 target+AUMID，其次源文件路径，保证多次扫描结果一致
@@ -79,6 +89,7 @@ signals:
     void sourcePathChanged();
     void iconPathChanged();
     void categoryChanged();
+    void groupChanged();
     void removableChanged();
 
 private:
@@ -92,5 +103,6 @@ private:
     QString m_sourcePath;
     QString m_iconPath;
     QString m_category;
+    QString m_group;
     bool m_removable = false;
 };

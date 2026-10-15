@@ -16,6 +16,7 @@
 
 class AppItem;
 class BackdropProvider;
+class GroupTile;
 class HotkeyManager;
 class LauncherWindow;
 class QTimer;
@@ -36,6 +37,19 @@ class Controller : public QObject
 
     Q_PROPERTY(QList<QObject *> apps READ apps NOTIFY appsChanged)
     Q_PROPERTY(QList<QObject *> visibleApps READ visibleApps NOTIFY visibleAppsChanged)
+    /*
+     * 网格真正的 model：应用 + 折叠文件夹的混合列表（见 GroupTile）。
+     * 和 visibleApps 的关系：visibleApps 永远是「应用条目」（托盘/编辑界面/计数用），
+     * gridItems 才是面板上要画的东西 —— 文件夹瓦片只在里面。
+     */
+    Q_PROPERTY(QList<QObject *> gridItems READ gridItems NOTIFY gridItemsChanged)
+    /*
+     * 当前打开的文件夹归组键；空串 = 网格在顶层。
+     * 打开文件夹时它同时会把 AppConfig.appCategory 设成该文件夹的主导分类，
+     * 于是顶部分类标签会跟着高亮 —— 不用再发明一套「文件夹里的分类」状态。
+     */
+    Q_PROPERTY(QString openGroup READ openGroup NOTIFY openGroupChanged)
+    Q_PROPERTY(QString openGroupLabel READ openGroupLabel NOTIFY openGroupChanged)
     Q_PROPERTY(QList<QObject *> manualApps READ manualApps NOTIFY manualAppsChanged)
     Q_PROPERTY(QList<QObject *> searchResults READ searchResults NOTIFY searchResultsChanged)
     Q_PROPERTY(QString query READ query WRITE setQuery NOTIFY queryChanged)
@@ -89,6 +103,12 @@ public:
      */
     Q_INVOKABLE void refreshVisible();
 
+    // ---- 文件夹（同源多入口归组）----
+    // 点文件夹瓦片：进去，网格换成这一组里的应用
+    Q_INVOKABLE void openGroup(const QString &groupKey);
+    // 返回键 / 面包屑：回到顶层
+    Q_INVOKABLE void closeGroup();
+
     // ---- 图标右键菜单 ----
     Q_INVOKABLE void runAsAdmin(QObject *item);       // 以管理员身份启动（弹 UAC）
     Q_INVOKABLE void revealInExplorer(QObject *item); // 在资源管理器中定位
@@ -125,6 +145,9 @@ public:
     // ---- getters ----
     QList<QObject *> apps() const { return m_apps; }
     QList<QObject *> visibleApps() const { return m_visible; }
+    QList<QObject *> gridItems() const;
+    QString openGroup() const { return m_openGroup; }
+    QString openGroupLabel() const;
     QList<QObject *> manualApps() const;
     QList<QObject *> searchResults() const { return m_searchResults; }
     QString query() const { return m_query; }
@@ -153,6 +176,8 @@ public:
 signals:
     void appsChanged();
     void visibleAppsChanged();
+    void gridItemsChanged();
+    void openGroupChanged();
     void manualAppsChanged();
     void searchResultsChanged();
     void queryChanged();
@@ -183,6 +208,12 @@ private:
     void setStatus(const QString &text);
     void setError(const QString &text);
     void rebuildCategories();
+    /*
+     * 把「应用列表」折成网格格子的步骤：按 group 归组，成员数 >= 阈值的收成文件夹，
+     * 其余的保持单条目。groupless 的写法是「组内所有成员都进来了才折叠」——
+     * 搜索/分类筛选下不会出现「文件夹里只剩 1 个」的壳。
+     */
+    void rebuildGroups(const QList<QObject *> &matched, QList<QObject *> *tilesOut);
     bool loadLayout();   // layout.json：手动条目 + 隐藏名单
     void saveLayout();
 
@@ -197,7 +228,9 @@ private:
     QList<AppItem *> m_all;      // 扫描得到的（不含手动项）
     QList<AppItem *> m_manual;   // 用户拖入/手工添加的
     QList<QObject *> m_apps;     // 合并 + 剔除隐藏后的基础列表
-    QList<QObject *> m_visible;  // 分类 + 搜索过滤后
+    QList<QObject *> m_visible;  // 应用条目：分类 + 搜索过滤后（不含文件夹）
+    QList<GroupTile *> m_grid;   // 网格 model：应用 + 文件夹（GroupTile，归本类所有）
+    QString m_openGroup;         // 当前打开的文件夹归组键，空 = 顶层
     QList<QObject *> m_searchResults;
     QSet<QString> m_hidden;      // 用户从启动台移除的条目 id（可恢复）
     QVariantList m_appCategories; // [{key,label,count}]，供顶部分类标签用

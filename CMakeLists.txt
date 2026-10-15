@@ -56,11 +56,13 @@ add_executable(WinLauncher WIN32
     src/Controller.cpp
     src/DebugTrace.cpp
     src/EverythingSearch.cpp
+    src/GroupTile.cpp
     src/HotkeyManager.cpp
     src/IconProvider.cpp
     src/Launcher.cpp
     src/LauncherWindow.cpp
     src/ShortcutResolver.cpp
+    src/UiFont.cpp
     src/WindowEffects.cpp
     # 头文件必须显式列出: AUTOMOC 只扫描 target sources 里的文件, 放在 inc/
     # 下不列出来的话 moc 不会被触发, 表现为"无法解析的外部符号 staticMetaObject"。
@@ -74,11 +76,13 @@ add_executable(WinLauncher WIN32
     inc/Controller.h
     inc/DebugTrace.h
     inc/EverythingSearch.h
+    inc/GroupTile.h
     inc/HotkeyManager.h
     inc/IconProvider.h
     inc/Launcher.h
     inc/LauncherWindow.h
     inc/ShortcutResolver.h
+    inc/UiFont.h
     inc/WindowEffects.h
     # 资源: 由 AUTORCC 编译, 并按 qrc 里引用的文件建立依赖
     resources/winlauncher.qrc

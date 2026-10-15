@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QColor>
+#include <QElapsedTimer>
 #include <QRect>
 #include <QQuickWindow>
 
@@ -95,6 +96,7 @@ signals:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
     bool event(QEvent *event) override;
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
@@ -104,6 +106,8 @@ private:
 
     HotkeyManager *m_hotkeys = nullptr;
     bool m_hideOnFocusOut = true;
+    // show() 的时刻：紧跟着到达的 WindowDeactivate 属于「焦点还没交接好」，要忽略
+    QElapsedTimer m_lastShow;
     bool m_darkBackdrop = true;
     qreal m_widthRatio = 0.62;
     qreal m_heightRatio = 0.66;

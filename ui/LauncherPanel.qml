@@ -46,11 +46,13 @@ Item {
      * 「什么都没有了」——用户很难意识到是搜索词还在。
      */
     function resetFilters() {
+        // 只改「值」，不主动重算：上面的 setter 在值真的变了时才触发重算，
+        // 值没变（面板上次关掉时就是干净状态，最常见）就一次计算都不做 ——
+        // 数据一直在常驻进程里，没必要每次弹面板都重读一遍。
         Ctrl.query = ""
         AppConfig.appCategory = "all"
-        // 值没变时上面两行不会触发重算，这里补一次强制的，
-        // 保证面板一打开看到的一定是完整列表
-        Ctrl.refreshVisible()
+        // 进过文件夹的话也回到顶层（Ctrl.closeGroup 在顶层时是空操作）
+        Ctrl.closeGroup()
     }
 
     GlassPanel {
@@ -88,9 +90,22 @@ Item {
                  */
                 text: Ctrl.query
                 onTextEdited: (value) => Ctrl.query = value
+                onEscaped: {
+                    // 先退一层：文件夹里按 Esc 回顶层，顶层再按才收起面板
+                    if (Ctrl.openGroup.length > 0)
+                        Ctrl.closeGroup()
+                    else
+                        root.closeRequested()
+                }
                 onAccepted: {
-                    if (Ctrl.visibleApps.length > 0)
-                        root.launchRequested(Ctrl.visibleApps[0])
+                    // 回车打开第一个格子的东西：是应用就启动，是文件夹就进去
+                    const first = Ctrl.gridItems.length > 0 ? Ctrl.gridItems[0] : null
+                    if (!first)
+                        return
+                    if (first.isFolder)
+                        Ctrl.openGroup(first.groupKey)
+                    else
+                        root.launchRequested(first.item)
                 }
             }
 
@@ -116,6 +131,62 @@ Item {
             textColor: root.textColor
         }
 
+        // ---- 面包屑：进了文件夹才出现 ----
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 26 : 0
+            spacing: 8
+            visible: Ctrl.openGroup.length > 0
+
+            // 「‹ 全部应用」：一键回顶层。Ctrl.closeGroup 只改列表，
+            // 顺带把分类筛选留在原处（顶部分类标签会说明当前筛的是什么）
+            Rectangle {
+                implicitWidth: backLabel.implicitWidth + 20
+                implicitHeight: 24
+                radius: 12
+                color: backArea.containsMouse
+                       ? (root.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08))
+                       : (root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.04))
+
+                Behavior on color {
+                    ColorAnimation { duration: 90 }
+                }
+
+                Text {
+                    id: backLabel
+                    anchors.centerIn: parent
+                    text: qsTr("‹ 全部应用")
+                    color: root.textColor
+                    font.pixelSize: 12
+                }
+
+                MouseArea {
+                    id: backArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Ctrl.closeGroup()
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+                text: Ctrl.openGroupLabel
+                color: root.textColor
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+            }
+
+            Text {
+                text: qsTr("%1 个").arg(Ctrl.matchCount)
+                color: root.subTextColor
+                font.pixelSize: 11
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+
         // ---- 中部：7 × 4 的图标网格（自由纵向滚动）----
         GridView {
             id: grid
@@ -131,19 +202,41 @@ Item {
             // 不超过容器高度，否则第 5 行会露出半截。
             cellHeight: Math.floor(height / root.visibleRows)
 
-            model: Ctrl.visibleApps
+            // 网格 model 是「应用 + 文件夹」的混合列表（Ctrl.gridItems）：
+            // 文件夹是同一来源的一堆入口折叠成的一格（J-Link 一家 44 个图标）
+            model: Ctrl.gridItems
 
-            delegate: AppTile {
-                width: grid.cellWidth
-                height: grid.cellHeight
-                dark: root.dark
-                textColor: root.textColor
-                app: modelData
-                onActivated: root.launchRequested(app)
-                onAdminRequested: Ctrl.runAsAdmin(app)
-                onRevealRequested: Ctrl.revealInExplorer(app)
-                onUninstallRequested: Ctrl.uninstallApp(app)
-                onRemoveRequested: Ctrl.hideApp(app)
+            /*
+             * 一格两种可能：应用瓦片 / 文件夹瓦片，按 modelData.isFolder 二选一显示。
+             *
+             * 这里**不能**用 Loader + 具名 Component：QML 的 Component 是独立作用域，
+             * 里面的代码看不到 delegate 的隐式 modelData，也看不到外层的 id
+             * （实测报 "ReferenceError: tileLoader is not defined" 然后整格空白）。
+             * 两个都放着、用 visible 切换，虽然多养一个不可见的 item，
+             * 但作用域直接就是 delegate 自己，没有坑。
+             */
+            delegate: Item {
+                AppTile {
+                    anchors.fill: parent
+                    visible: !(modelData && modelData.isFolder)
+                    dark: root.dark
+                    textColor: root.textColor
+                    app: modelData ? modelData.item : null
+                    onActivated: root.launchRequested(app)
+                    onAdminRequested: Ctrl.runAsAdmin(app)
+                    onRevealRequested: Ctrl.revealInExplorer(app)
+                    onUninstallRequested: Ctrl.uninstallApp(app)
+                    onRemoveRequested: Ctrl.hideApp(app)
+                }
+
+                FolderTile {
+                    anchors.fill: parent
+                    visible: modelData && modelData.isFolder
+                    dark: root.dark
+                    textColor: root.textColor
+                    folder: modelData
+                    onActivated: Ctrl.openGroup(modelData.groupKey)
+                }
             }
 
             // 不挂 ScrollBar：macOS 那边没有滚动条，靠滚轮/拖动
@@ -153,7 +246,7 @@ Item {
                 width: parent.width - 40
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
-                visible: Ctrl.visibleApps.length === 0
+                visible: Ctrl.gridItems.length === 0
                 color: root.subTextColor
                 font.pixelSize: 13
                 text: Ctrl.scanning
@@ -244,9 +337,10 @@ Item {
             Text {
                 color: root.subTextColor
                 font.pixelSize: 11
+                // 搜索词或分类筛选生效时显示「命中 / 总数」，否则只显示总数
                 text: Ctrl.scanning
                       ? qsTr("扫描 %1 / %2").arg(Ctrl.scanProgress).arg(Ctrl.scanTotal)
-                      : (Ctrl.query.length > 0
+                      : (Ctrl.query.length > 0 || AppConfig.appCategory !== "all"
                          ? qsTr("%1 / %2").arg(Ctrl.matchCount).arg(Ctrl.totalCount)
                          : qsTr("%1 个应用").arg(Ctrl.totalCount))
             }
