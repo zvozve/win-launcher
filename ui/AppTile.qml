@@ -23,9 +23,21 @@ Item {
 
     /*
      * 键盘选中。由 LauncherPanel 在网格拿到焦点时按 GridView.isCurrentItem 设置，
-     * 和鼠标 hover 分开：两者可以同时成立，视觉上以键盘选中为准（更醒目）。
+     * 和鼠标 hover 互斥：网格一旦拿到键盘焦点，鼠标 hover 就让位给键盘选中，
+     * 不会出现「鼠标停一格、键盘选中另一格、两个同时亮」。
      */
     property bool keySelected: false
+
+    // 网格是否持有键盘焦点（LauncherPanel 透传 grid.activeFocus）。
+    // 为 true 时鼠标 hover 高亮让位给键盘选中（二者互斥，避免双高亮）。
+    property bool keyboardActive: false
+
+    // 自己在网格中的下标（LauncherPanel 透传 index），用于把 hover 事件上报回去
+    property int tileIndex: -1
+
+    // 鼠标进入 / 离开本格：LauncherPanel 据此记录 hover 起点、并切回鼠标模式
+    signal tileEntered(int index)
+    signal tileExited(int index)
 
     signal activated()
     signal adminRequested()
@@ -246,6 +258,8 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        onEntered: root.tileEntered(root.tileIndex)
+        onExited: root.tileExited(root.tileIndex)
         onClicked: function (mouse) {
             if (mouse.button === Qt.RightButton)
                 contextMenu.popup()

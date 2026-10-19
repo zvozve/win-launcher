@@ -20,6 +20,12 @@ Item {
 
     // 键盘选中（机制同 AppTile：网格有焦点且是 currentItem 时点亮）
     property bool keySelected: false
+    // 网格是否处于键盘导航模式（LauncherPanel 透传 root.keyboardMode）
+    property bool keyboardActive: false
+    // 自己在网格中的下标（LauncherPanel 透传 index），用于把 hover 事件上报回去
+    property int tileIndex: -1
+    signal tileEntered(int index)
+    signal tileExited(int index)
 
     signal activated()
 
@@ -178,6 +184,8 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        onEntered: root.tileEntered(root.tileIndex)
+        onExited: root.tileExited(root.tileIndex)
         onClicked: function (mouse) {
             if (mouse.button === Qt.RightButton)
                 contextMenu.popup()

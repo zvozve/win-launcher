@@ -43,6 +43,13 @@ Item {
      */
     property real savedTopY: -1
 
+    // 鼠标当前悬停的网格下标（tile 进入时上报）；-1 = 不在任何格上
+    property int hoverIndex: -1
+    // 交互模式：false = 鼠标模式（显示 hover 高亮、隐藏键盘高亮），
+    // true = 键盘模式（反过来）。切换：鼠标进入任意格 -> 鼠标模式；
+    // 键盘接管网格（Tab 进入 / 鼠标悬停时按方向键）-> 键盘模式。
+    property bool keyboardMode: false
+
     // 进文件夹统一走这里：先记位置再进去（直接调 Ctrl.openGroupKey 会丢掉位置）
     function openFolder(key) {
         if (!key)
@@ -96,6 +103,39 @@ Item {
         }
     }
 
+    // 鼠标悬停在网格上、还没进键盘模式时，按方向键直接从鼠标位置开始键盘导航
+    Keys.onLeftPressed:  (e) => root.beginKeyboardFromHover(e, -1, 0)
+    Keys.onRightPressed: (e) => root.beginKeyboardFromHover(e,  1, 0)
+    Keys.onUpPressed:    (e) => root.beginKeyboardFromHover(e,  0, -1)
+    Keys.onDownPressed:  (e) => root.beginKeyboardFromHover(e,  0,  1)
+
+    /*
+     * 鼠标模式 + 焦点不在网格时按方向键：从鼠标悬停格进入键盘导航，
+     * 并顺着方向先移动一格（"继承然后移动"）。
+     * 已在键盘模式 / 网格有焦点 -> 交给 GridView 内置导航，不抢；
+     * 焦点在搜索框 / 分类条 -> 方向键不跨区（Tab 才是跨区入口）。
+     */
+    function beginKeyboardFromHover(event, dx, dy) {
+        if (root.keyboardMode || grid.activeFocus)
+            return
+        if (searchBar.activeFocus || catBar.activeFocus)
+            return
+        if (root.hoverIndex < 0 || Ctrl.gridItems.length === 0)
+            return
+
+        root.keyboardMode = true
+        const n = Ctrl.gridItems.length
+        let i = root.hoverIndex
+        if (dx !== 0)
+            i = Math.max(0, Math.min(n - 1, i + dx))
+        else
+            i = Math.max(0, Math.min(n - 1, i + dy * root.columns))
+        grid.currentIndex = i
+        grid.forceActiveFocus()
+        grid.positionViewAtIndex(grid.currentIndex, GridView.Contain)
+        event.accepted = true
+    }
+
     readonly property int categoryIndex: Math.max(0, Ctrl.searchCategoryKeys.indexOf(
                                                       AppConfig.searchCategory))
     readonly property string categoryLabel: Ctrl.searchCategoryLabels[categoryIndex]
@@ -120,8 +160,12 @@ Item {
     function focusGrid() {
         if (Ctrl.gridItems.length === 0)
             return false
-        if (grid.currentIndex < 0 || grid.currentIndex >= Ctrl.gridItems.length)
+        // 从鼠标停留的位置继承，而不是每次都从第 0 格开始
+        if (root.hoverIndex >= 0 && root.hoverIndex < Ctrl.gridItems.length)
+            grid.currentIndex = root.hoverIndex
+        else if (grid.currentIndex < 0 || grid.currentIndex >= Ctrl.gridItems.length)
             grid.currentIndex = 0
+        root.keyboardMode = true
         grid.forceActiveFocus()
         grid.positionViewAtIndex(grid.currentIndex, GridView.Contain)
         return true
@@ -483,6 +527,11 @@ Item {
                     app: modelData ? modelData.item : null
                     // 键盘选中：只在网格真的拿到焦点时才亮，鼠标 hover 时不算
                     keySelected: grid.activeFocus && isCurr
+                    // 鼠标模式标志（透传 keyboardMode）+ 自己在网格中的下标
+                    keyboardActive: root.keyboardMode
+                    tileIndex: index
+                    onTileEntered: (i) => { root.hoverIndex = i; root.keyboardMode = false }
+                    onTileExited: (i) => { if (root.hoverIndex === i) root.hoverIndex = -1 }
                     onActivated: root.launchRequested(app)
                     onAdminRequested: Ctrl.runAsAdmin(app)
                     onRevealRequested: Ctrl.revealInExplorer(app)
@@ -496,6 +545,10 @@ Item {
                     visible: modelData && modelData.isFolder
                     folder: modelData
                     keySelected: grid.activeFocus && isCurr
+                    keyboardActive: root.keyboardMode
+                    tileIndex: index
+                    onTileEntered: (i) => { root.hoverIndex = i; root.keyboardMode = false }
+                    onTileExited: (i) => { if (root.hoverIndex === i) root.hoverIndex = -1 }
                     onActivated: root.openFolder(modelData.groupKey)
                 }
             }
