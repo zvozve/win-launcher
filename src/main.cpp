@@ -506,7 +506,7 @@ int main(int argc, char *argv[])
     /*
      * --open-folder：扫描完成后自动进第一个文件夹。
      * 给自动化验证用 —— 想截「组内视图」，靠脚本点坐标既不准也脆弱，
-     * 这里直接调 Ctrl.openGroup()，走的是和点瓦片完全一样的代码路径。
+     * 这里直接调 Ctrl.openGroupKey()，走的是和点瓦片完全一样的代码路径。
      */
     if (app.arguments().contains(QStringLiteral("--open-folder"))) {
         auto *t = new QTimer(window);
@@ -517,7 +517,7 @@ int main(int argc, char *argv[])
                 if (tile->property("isFolder").toBool()) {
                     const QString key = tile->property("groupKey").toString();
                     wlTrace(QStringLiteral("open-folder: %1").arg(key));
-                    controller.openGroup(key);
+                    controller.openGroupKey(key);
                     t->stop();
                     return;
                 }

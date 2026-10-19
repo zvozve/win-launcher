@@ -173,6 +173,9 @@ void Controller::attachWindow(LauncherWindow *window)
     if (!m_window)
         return;
 
+    // 让窗口的 Esc 处理能先退出文件夹（见 LauncherWindow::event）
+    m_window->setController(this);
+
     m_window->setHideOnFocusOut(m_config->hideOnFocusOut());
     m_window->setDarkBackdrop(m_config->darkMode());
     connect(m_config, &Config::hideOnFocusOutChanged, m_window,
@@ -300,7 +303,8 @@ void Controller::finishScan()
     emit scanProgressChanged();
 
     rebuildVisible();
-    setStatus(QStringLiteral("共 %1 个应用").arg(m_all.size()));
+    // 状态行的「共 N 个」由 rebuildVisible 统一给（数量按**格子**算，文件夹算一格），
+    // 这里再写一次 m_all.size() 会把折叠后的数字盖回「221 个应用」。
     wlTrace(QStringLiteral("finishScan: %1 items").arg(m_all.size()));
 }
 
@@ -380,18 +384,6 @@ void Controller::rebuildVisible()
     m_visible = matched;
 
     /*
-     * 状态行跟着筛选走，否则按了「开发」下面还写「共 221 个应用」，
-     * 看起来就像筛选没生效。动作消息（已启动 X / 已移除 X）不由这里管，
-     * 它们在下一次筛选变化前一直留着。
-     */
-    if (!needle.isEmpty())
-        setStatus(QStringLiteral("匹配「%1」· %2 个").arg(needle).arg(m_visible.size()));
-    else if (categoryFiltered)
-        setStatus(QStringLiteral("分类「%1」· %2 个").arg(AppCategory::label(appCat)).arg(m_visible.size()));
-    else
-        setStatus(QStringLiteral("共 %1 个应用").arg(m_visible.size()));
-
-    /*
      * 4.5) 归组：把「应用条目」折成网格格子。
      *
      * 文件夹只在**没有搜索词**时出现。理由：搜索是「我要找某个东西」，
@@ -399,17 +391,30 @@ void Controller::rebuildVisible()
      * 本来就是平铺的，两边不一致会让人以为搜丢了。
      */
     QString openGroup = m_openGroup;
-    // 搜索时自动退出文件夹（上面那条原则），列表会立刻铺开
-    if (!needle.isEmpty())
-        openGroup.clear();
+    /*
+     * 搜索时**不再**在这里自动退出文件夹。
+     *
+     * 以前是 `if (!needle.isEmpty()) openGroup.clear();`，后果是：搜索结果里
+     * 折叠出来的文件夹（例如搜 "E-book" 时 calibre 那组 4 个全中）点进去，
+     * openGroupKey 刚把 m_openGroup 设好，紧接着这次 rebuild 又把它清掉 ——
+     * 表现就是「搜索出来的文件夹点不了」，点了没反应。
+     * 现在「退回顶层」只发生在 setQuery 真的换搜索词的时候（见 setQuery）。
+     */
 
     QList<QObject *> tiles;
     if (!openGroup.isEmpty()) {
-        // 进到文件夹里：只列这一组的成员，不再嵌套文件夹
+        /*
+         * 进到文件夹里：只列这一组的成员，不再嵌套文件夹。
+         *
+         * ★ 必须包成 GroupTile 再塞进 tiles —— 下面「重建 model」那步只收
+         *   qobject_cast<GroupTile*> 成功的对象，直接 append(item) 的话这些
+         *   AppItem 会被整批丢掉，网格变成 0 格（2026-10-19 实测：
+         *   `grid: 0 tiles ... open=calibre... (0)`，点文件夹一片空白）。
+         */
         for (QObject *obj : std::as_const(matched)) {
             if (auto *item = qobject_cast<AppItem *>(obj)) {
                 if (item->group() == openGroup)
-                    tiles.append(item);
+                    tiles.append(new GroupTile(item, this));
             }
         }
         // 组空了（成员全被移除 / 分类切走）就自动退回顶层
@@ -439,7 +444,30 @@ void Controller::rebuildVisible()
         }
     }
 
-    const bool groupChanged = (m_openGroup != openGroup);
+    /*
+     * 状态行跟着筛选走，否则按了「开发」下面还写「共 221 个应用」，
+     * 看起来就像筛选没生效。动作消息（已启动 X / 已移除 X）不由这里管，
+     * 它们在下一次筛选变化前一直留着。
+     *
+     * ★ 数字用**格子数**（m_grid.size()）而不是应用数：一个文件夹在网格里
+     *   只占一格，计数也只算一次（用户明确要求）。所以 221 个应用折成 152 格时
+     *   这里写 152；进文件夹后写成员数。
+     */
+    const int shownTiles = m_grid.size();
+    if (!needle.isEmpty())
+        setStatus(QStringLiteral("匹配「%1」· %2 个").arg(needle).arg(shownTiles));
+    else if (categoryFiltered)
+        setStatus(QStringLiteral("分类「%1」· %2 个").arg(AppCategory::label(appCat)).arg(shownTiles));
+    else
+        setStatus(QStringLiteral("共 %1 个").arg(shownTiles));
+
+    /*
+     * ★ 这里不比对「变了没有」：openGroupKey / closeGroup 都是「先改 m_openGroup
+     *   再调 rebuildVisible」，到这里 m_openGroup 早就等于 openGroup，拿它算
+     *   groupChanged 永远 false —— openGroupChanged 一次都不会发。后果（实测）：
+     *   QML 里的 Ctrl.openGroup 永远停在空串，面包屑不出现，Esc 也退不出文件夹。
+     *   所以信号无条件发（多刷新几个绑定，代价可以忽略）。
+     */
     m_openGroup = openGroup;
 
     /*
@@ -507,8 +535,7 @@ void Controller::rebuildVisible()
         emit appsChanged();
     emit visibleAppsChanged();
     emit gridItemsChanged();
-    if (groupChanged)
-        emit openGroupChanged();
+    emit openGroupChanged();   // 无条件发，理由见上面 m_openGroup 那段注释
     emit searchResultsChanged();
 }
 
@@ -522,8 +549,9 @@ void Controller::rebuildVisible()
  *      一两条，这时如果还显示文件夹，点进去只有一个图标 —— 比不折叠更糟；
  *   3. 成员数 >= groupThreshold（默认 3）才折叠。本机 2 个一组的很多
  *      （卸载残留、同软件的主程序 + 帮助），折起来反而多一次点击；
- *   4. 文件夹的分类 = 组内主导分类，这样顶部「开发」标签一按，
- *      J-Link / MSYS2 这些文件夹跟着一起进来（本机实测这些组都是同分类的）。
+ *   4. 文件夹由**筛选后的列表**直接折出来，自身不存分类；按「开发」标签时
+ *      J-Link / MSYS2 这些组只要成员全在该分类里就照常折叠（2026-10-19 修正：
+ *      早先还额外记过一个「主导分类」用来切顶部标签，已随 openGroupKey 一起删掉）。
  *
  * 输出顺序：按「组内第一个成员」在输入列表里的位置排列，保持扫描顺序，
  * 分组不会让网格跳来跳去。
@@ -620,36 +648,37 @@ QString Controller::openGroupLabel() const
 }
 
 /*
- * 进文件夹。顺带把顶部分类切到这个文件夹的主导分类 —— 面板顶部的标签条因此
- * 会高亮成「开发」，用户一眼能看出自己在哪一层；返回顶层时不用还原，
- * 顶层的分类筛选本来就该由用户自己控制。
+ * 进文件夹。**不碰顶部分类**。
+ *
+ * 2026-10-19 修正：以前这里会把 appCategory 切成「组内主导分类」，想让顶部标签
+ * 高亮成该分类、提示用户在哪一层。实际效果是「点一下文件夹，顶部分类跳到别的
+ * 标签」——而且 appCategory 是持久化到 config.json 的，返回顶层也不会还原，
+ * 用户原本的筛选被悄悄改掉了。面包屑（‹ 全部应用 / 文件夹名）已经足够提示层级，
+ * 分类筛选应该只由用户按标签决定。
+ *
+ * 另外：能看到的文件夹，其成员必定全部在当前筛选结果里（rebuildGroups 的折叠
+ * 前提），所以进来之后不需要再切分类也不会是空网格。
  */
-void Controller::openGroup(const QString &groupKey)
+void Controller::openGroupKey(const QString &groupKey)
 {
     if (groupKey.isEmpty() || groupKey == m_openGroup)
         return;
 
-    QString dominant;
-    int best = 0;
-    QHash<QString, int> counts;
+    // 组不存在（可能刚被清掉）就别动，避免进入一个空文件夹
+    bool exists = false;
     for (QObject *obj : std::as_const(m_apps)) {
-        auto *item = qobject_cast<AppItem *>(obj);
-        if (!item || item->group() != groupKey)
-            continue;
-        const int n = ++counts[item->category()];
-        if (n > best) {
-            best = n;
-            dominant = item->category();
+        if (auto *item = qobject_cast<AppItem *>(obj)) {
+            if (item->group() == groupKey) {
+                exists = true;
+                break;
+            }
         }
     }
-    if (best == 0)
-        return; // 组不存在（可能刚被清掉）
+    if (!exists)
+        return;
 
     m_openGroup = groupKey;
-    if (!dominant.isEmpty() && dominant != m_config->appCategory())
-        m_config->setAppCategory(dominant); // 它的 changed 信号会带回一次重建
-    else
-        rebuildVisible();
+    rebuildVisible();
 }
 
 void Controller::closeGroup()
@@ -661,33 +690,76 @@ void Controller::closeGroup()
 }
 
 /*
+ * 某个分类在网格里会占几格 —— 也就是「把文件夹折起来之后」的数量。
+ *
+ * 规则和 rebuildGroups 完全一致（阈值、以及「组内成员必须全在」），只是这里
+ * 按分类分别算，用来填顶部分类标签上的数字：
+ *   tiles = 该分类的应用数 - 被折进文件夹的成员数 + 文件夹个数
+ * 于是「全部 221」会显示成 152 格，和网格里数出来的格子数一致；
+ * 一个文件夹只算一次（用户明确要求）。
+ *
+ * 不叠搜索词/搜索类型的影响：分类标签上的数字一直是全局量，不跟着搜索跳
+ * （沿用原来的约定）。
+ */
+int Controller::tileCountFor(const QString &categoryKey) const
+{
+    const int threshold = qMax(2, m_config->groupThreshold());
+    const bool noFilter = categoryKey.isEmpty() || categoryKey == QLatin1String("all");
+
+    QHash<QString, int> groupTotal; // 该组在**全部应用**里的成员数
+    QHash<QString, int> groupInCat; // 该组在这个分类下的成员数
+    int appsInCat = 0;
+
+    for (QObject *obj : std::as_const(m_apps)) {
+        auto *item = qobject_cast<AppItem *>(obj);
+        if (!item)
+            continue;
+        const bool inCat = noFilter || item->category() == categoryKey;
+        if (inCat)
+            ++appsInCat;
+        const QString g = item->group();
+        if (g.isEmpty())
+            continue;
+        ++groupTotal[g];
+        if (inCat)
+            ++groupInCat[g];
+    }
+
+    int folders = 0;
+    int appsInFolded = 0;
+    for (auto it = groupInCat.constBegin(); it != groupInCat.constEnd(); ++it) {
+        const int n = it.value();
+        // 和 rebuildGroups 同一个折叠前提：达到阈值，且成员一个都没被筛掉
+        if (n >= threshold && n == groupTotal.value(it.key())) {
+            ++folders;
+            appsInFolded += n;
+        }
+    }
+
+    return appsInCat - appsInFolded + folders;
+}
+
+/*
  * 顶部分类标签：[{key, label, count}]。
- * count 针对的是「剔除隐藏后的基础列表」，不含搜索词的影响 —— 搜到一半时标签上的
- * 数字还是全局数量，不会跳来跳去。
+ * count 是**格子数**（文件夹算一格），针对「剔除隐藏后的基础列表」，
+ * 不含搜索词的影响 —— 搜到一半时标签上的数字还是全局数量，不会跳来跳去。
  */
 void Controller::rebuildCategories()
 {
-    QHash<QString, int> counts;
-    for (QObject *obj : std::as_const(m_apps)) {
-        if (auto *item = qobject_cast<AppItem *>(obj))
-            ++counts[item->category()];
-    }
-
     const QStringList keys = AppCategory::keys();
     const QStringList labels = AppCategory::labels();
 
     QVariantList cats;
     cats.reserve(keys.size());
     for (int i = 0; i < keys.size(); ++i) {
-        const QString key = keys.at(i);
         QVariantMap m;
-        m.insert(QStringLiteral("key"), key);
+        m.insert(QStringLiteral("key"), keys.at(i));
         m.insert(QStringLiteral("label"), labels.value(i));
-        m.insert(QStringLiteral("count"),
-                 key == QLatin1String("all") ? m_apps.size() : counts.value(key));
+        m.insert(QStringLiteral("count"), tileCountFor(keys.at(i)));
         cats.append(m);
     }
 
+    m_tileTotal = tileCountFor(QStringLiteral("all"));
     m_appCategories = cats;
     emit appCategoriesChanged();
 }
@@ -697,6 +769,17 @@ void Controller::setQuery(const QString &q)
     if (m_query == q)
         return;
     m_query = q;
+
+    /*
+     * 换搜索词就退回顶层：搜索是「我要找某个东西」，被锁在某个文件夹里搜
+     * 容易让人以为搜漏了。
+     *
+     * ★ 只能在这里退，不能在 rebuildVisible 里按 needle 判断 —— 那会把
+     *   「在搜索结果里点文件夹进去」这个动作也一起打回顶层，表现为文件夹点不了。
+     *   点进文件夹后搜索词不变，所以这里不会再被清掉。
+     */
+    m_openGroup.clear();
+
     emit queryChanged();
     m_searchDebounce->start();
 }

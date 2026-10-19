@@ -68,6 +68,10 @@ Window {
 
     // 分组标题：上方留 18（和上一组拉开），下方留 8（贴近自己的卡片），左右 26
     // —— Win11 设置里标题是「属于下一张卡片」的，所以要往卡片靠。
+    //
+    // 字号和行标签**同号**（fsTitle 14），只靠 DemiBold 区分层级。
+    // 改造前这里用 fsBody 12，比行标签的 14 还小 —— 层级倒挂，
+    // 一屏里大字号全是行名、小字号反而是标题，看着就不统一。
     component GroupTitle: Text {
         Layout.leftMargin: 26
         Layout.rightMargin: 26
@@ -75,7 +79,7 @@ Window {
         Layout.topMargin: 18
         Layout.bottomMargin: 8
         color: Theme.textMid
-        font.pixelSize: Theme.fsBody
+        font.pixelSize: Theme.fsTitle
         font.weight: Font.DemiBold
     }
 
@@ -127,7 +131,7 @@ Window {
                 Text {
                     anchors.centerIn: parent
                     text: "\u2715"
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fsLabel
                     color: closeArea.containsMouse ? "#FFFFFF" : Theme.textHi
                 }
 

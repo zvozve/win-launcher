@@ -100,7 +100,8 @@ Rectangle {
         anchors.centerIn: parent
         text: root.capturing ? qsTr("按下组合键…（Esc 取消）") : AppConfig.hotkey
         color: root.capturing ? Theme.accent : Theme.textHi
-        font.pixelSize: Theme.fsBody
+        // 与 WinButton / WinComboBox / WinSpinBox 同档（Theme 字号层级）
+        font.pixelSize: Theme.fsLabel
     }
 
     MouseArea {

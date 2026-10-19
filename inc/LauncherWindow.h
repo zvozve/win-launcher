@@ -8,6 +8,7 @@
 #include "WindowEffects.h"
 
 class HotkeyManager;
+class Controller;
 
 /*
  * 启动台弹出面板窗口（QML 里的根对象）。
@@ -70,6 +71,13 @@ public:
 
     void setHotkeyManager(HotkeyManager *manager) { m_hotkeys = manager; }
 
+    /*
+     * 挂上 Controller：只为了让 Esc 能「先退一层文件夹，再收起面板」。
+     * 不挂也不影响启动，只是 Esc 永远直接收起。
+     * （由 Controller::attachWindow 调用，不需要 QML 参与）
+     */
+    void setController(Controller *c) { m_controller = c; }
+
     // QML 调用
     Q_INVOKABLE void showAtCursor();  // 在鼠标所在屏幕居中弹出
     Q_INVOKABLE void toggleAtCursor(); // 已显示则收起，否则弹出
@@ -105,6 +113,7 @@ private:
     void moveToScreen(const QScreen *screen);
 
     HotkeyManager *m_hotkeys = nullptr;
+    Controller *m_controller = nullptr;
     bool m_hideOnFocusOut = true;
     // show() 的时刻：紧跟着到达的 WindowDeactivate 属于「焦点还没交接好」，要忽略
     QElapsedTimer m_lastShow;

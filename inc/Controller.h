@@ -45,8 +45,8 @@ class Controller : public QObject
     Q_PROPERTY(QList<QObject *> gridItems READ gridItems NOTIFY gridItemsChanged)
     /*
      * 当前打开的文件夹归组键；空串 = 网格在顶层。
-     * 打开文件夹时它同时会把 AppConfig.appCategory 设成该文件夹的主导分类，
-     * 于是顶部分类标签会跟着高亮 —— 不用再发明一套「文件夹里的分类」状态。
+     * ★ 进文件夹**不会**改分类筛选（早先会切成「组内主导分类」，结果点一下
+     *   文件夹顶部分类标签就跳到别的分类，而且会持久化）。层级提示交给面包屑。
      */
     Q_PROPERTY(QString openGroup READ openGroup NOTIFY openGroupChanged)
     Q_PROPERTY(QString openGroupLabel READ openGroupLabel NOTIFY openGroupChanged)
@@ -55,6 +55,13 @@ class Controller : public QObject
     Q_PROPERTY(QString query READ query WRITE setQuery NOTIFY queryChanged)
     Q_PROPERTY(int totalCount READ totalCount NOTIFY appsChanged)
     Q_PROPERTY(int matchCount READ matchCount NOTIFY visibleAppsChanged)
+    /*
+     * 网格里的**格子数**（一个文件夹算一格）。面板上的计数都该用这个，
+     * 而不是应用条数 —— 221 个应用折成 152 格时，用户眼里的「数量」是 152。
+     */
+    Q_PROPERTY(int tileCount READ tileCount NOTIFY gridItemsChanged)
+    // 全部格子数（不看分类/搜索），给状态栏「命中 / 总数」当分母
+    Q_PROPERTY(int tileTotal READ tileTotal NOTIFY appCategoriesChanged)
     Q_PROPERTY(bool scanning READ scanning NOTIFY scanningChanged)
     Q_PROPERTY(int scanProgress READ scanProgress NOTIFY scanProgressChanged)
     Q_PROPERTY(int scanTotal READ scanTotal NOTIFY scanProgressChanged)
@@ -104,8 +111,16 @@ public:
     Q_INVOKABLE void refreshVisible();
 
     // ---- 文件夹（同源多入口归组）----
-    // 点文件夹瓦片：进去，网格换成这一组里的应用
-    Q_INVOKABLE void openGroup(const QString &groupKey);
+    /*
+     * 点文件夹瓦片：进去，网格换成这一组里的应用。
+     *
+     * ★ 名字不能叫 openGroup：类里已经有一个同名的 Q_PROPERTY
+     *   （QString openGroup = 当前归组键），QML 侧**属性会遮蔽同名方法**，
+     *   写 `Ctrl.openGroup(key)` 会报
+     *   "Property 'openGroup' of object Controller is not a function"，
+     *   点文件夹瓦片完全没反应。所以方法叫 openGroupKey。
+     */
+    Q_INVOKABLE void openGroupKey(const QString &groupKey);
     // 返回键 / 面包屑：回到顶层
     Q_INVOKABLE void closeGroup();
 
@@ -153,6 +168,8 @@ public:
     QString query() const { return m_query; }
     int totalCount() const { return m_apps.size(); }
     int matchCount() const { return m_visible.size(); }
+    int tileCount() const { return m_grid.size(); }
+    int tileTotal() const { return m_tileTotal; }
     bool scanning() const { return m_scanning; }
     int scanProgress() const { return m_scanIndex; }
     int scanTotal() const { return m_scanTasks.size(); }
@@ -208,6 +225,8 @@ private:
     void setStatus(const QString &text);
     void setError(const QString &text);
     void rebuildCategories();
+    // 某个分类折叠后占几格（文件夹算一格）；空串 / "all" = 全部
+    int tileCountFor(const QString &categoryKey) const;
     /*
      * 把「应用列表」折成网格格子的步骤：按 group 归组，成员数 >= 阈值的收成文件夹，
      * 其余的保持单条目。groupless 的写法是「组内所有成员都进来了才折叠」——
@@ -234,6 +253,7 @@ private:
     QList<QObject *> m_searchResults;
     QSet<QString> m_hidden;      // 用户从启动台移除的条目 id（可恢复）
     QVariantList m_appCategories; // [{key,label,count}]，供顶部分类标签用
+    int m_tileTotal = 0;          // 全部格子数（折叠后的总数）
 
     QList<AppScanner::Task> m_scanTasks;
     QList<ScannedApp> m_scanBuffer;

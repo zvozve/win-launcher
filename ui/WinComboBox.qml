@@ -16,7 +16,9 @@ ComboBox {
 
     implicitWidth: 130
     implicitHeight: 30
-    font.pixelSize: Theme.fsBody
+    // 和 WinSpinBox / WinButton / HotkeyRecorder 同档（fsLabel）——
+    // 设置窗口里一排控件文字大小不一，是「不统一」最直接的来源
+    font.pixelSize: Theme.fsLabel
 
     background: Rectangle {
         radius: Theme.rSm
@@ -48,7 +50,7 @@ ComboBox {
         height: root.height
         text: "▾"
         color: root.enabled ? Theme.textLo : Theme.textDis
-        font.pixelSize: 10
+        font.pixelSize: Theme.fsTiny
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
     }

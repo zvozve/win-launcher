@@ -59,7 +59,7 @@ Window {
                 anchors.topMargin: 6
                 text: modelData.name
                 color: "#1C1C1E"
-                font.pixelSize: 12
+                font.pixelSize: Theme.fsBody
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
             }

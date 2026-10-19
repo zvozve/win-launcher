@@ -65,7 +65,7 @@ Window {
                 text: qsTr("编辑图标")
                 color: Theme.textHi
                 font.pixelSize: Theme.fsTitle
-                font.bold: true
+                font.weight: Font.DemiBold
             }
 
             Text {

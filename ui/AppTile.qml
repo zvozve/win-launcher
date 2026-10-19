@@ -44,27 +44,62 @@ Item {
          */
         delegate: WinMenuItem {}
 
+        /*
+         * ★ 宽写死 196、padding 写死 6、内部 2px 元素缝压掉。
+         *
+         * [宽] QQuickMenu 默认把 popup 撑成「最宽项 contentItem 隐式宽」，而
+         * 子项的固定 width（图标列 22px）不进隐式宽求和 —— 不写死的话菜单
+         * 只有 ~132 宽，图标列再砍 22，标签仅剩 64px，"以管理员身份打开"
+         * 直接被省略号截断（qml 实测 truncated=true）。写死 196 后菜单项
+         * 宽 184、标签 146px 完整（truncated=false）。
+         *
+         * [padding] ★ 必须显式写。main.cpp 里 QQuickStyle::setStyle("Basic")，
+         * **Basic 样式的 Menu 默认 padding = 0**：popup 高 = 各菜单项累加
+         * = 5×36 + 3×11 = 213，首项从 y=0 起、末项 bottom 正好等于 popup 高，
+         * 于是「底部文字贴底」、首末项 hover 高亮紧贴圆角边框看着像被裁掉。
+         * 显式 padding: 6（Win11 新版大间距）后 popup = 6 + 213 + 6 = 225，
+         * 高亮块离外边框 10px。
+         *
+         * 之前记的「高 197 / 上下各 5px 内边距」是在**未指定样式**的 qml.exe
+         * 里量的（那时走默认样式，padding=5），不是程序真实表现 —— 已作废。
+         * 量菜单几何必须带 QT_QUICK_CONTROLS_STYLE=Basic。
+         *
+         * [缝] 内部 ListView 默认 spacing=2，会在每个元素之间塞 2px 缝 ——
+         * Win11 菜单行与行贴平，视觉空隙由高亮块自带的 4px 缩进提供；
+         * 8 个元素共 7 道缝 = 14px，菜单会看着发"散"。contentItem 在
+         * Component.onCompleted 时已存在，直接设即可。
+         */
+        width: 196
+        padding: 6
+        Component.onCompleted: if (contentItem) contentItem.spacing = 0
+
         // Win11 菜单容器：圆角 8、近实色底、1px 淡边。
-        // 宽度写死 196（菜单项 188 + 两侧各 4 内缩）；高度量 contentItem 的
-        // 内容高（这个是可靠的）再加边框。别用 contentItem.implicitWidth ——
-        // Menu 的 contentItem 横向 implicitWidth 是 0，拿来算宽度菜单会缩没。
+        // 宽和上面写死的 196 对齐；高只是占位（见上）。
         background: Rectangle {
             implicitWidth: 196
-            implicitHeight: Math.max(32, (contentItem ? contentItem.implicitHeight : 0) + 2)
+            implicitHeight: 32
             radius: Theme.rMd
             color: Theme.bgMenu
             border.width: 1
             border.color: Theme.border
         }
 
-        // 分隔线也内缩 4px，和菜单项的高亮块左右对齐
+        // 分隔线也内缩 6px，和菜单项的高亮块左右对齐。
+        // ★ 高度写 height（决定菜单总高中的 11px/条）；1px 的线靠 contentItem
+        //   anchors.fill + 上下各 5px 边距居中（11-5-5=1），线才不会变粗。
+        //   不 fill 的话线贴在槽的顶部，就是「分隔线紧贴文字」的观感
+        //   （2026-10-16 实测：旧版线在槽顶、新版居中）。
         component MenuSep: MenuSeparator {
-            implicitHeight: 9
+            height: 11
 
             contentItem: Rectangle {
-                implicitWidth: 188
-                implicitHeight: 1
-                anchors.margins: 4
+                anchors.fill: parent
+                // 左右与菜单项高亮块对齐；上下各留 5px 空隙，
+                // 1px 的线直接贴着文字就是「菜单好挤」的来源
+                anchors.leftMargin: 4
+                anchors.rightMargin: 4
+                anchors.topMargin: 5
+                anchors.bottomMargin: 5
                 color: Theme.divider
             }
         }
@@ -153,7 +188,7 @@ Item {
                 anchors.centerIn: parent
                 text: root.app ? root.app.name.charAt(0).toUpperCase() : "?"
                 font.pixelSize: Math.round(root.iconSize * 0.44)
-                font.bold: true
+                font.weight: Font.DemiBold
                 color: Theme.textHi
                 opacity: 0.75
             }

@@ -16,7 +16,8 @@ SpinBox {
 
     implicitWidth: 130
     implicitHeight: 30
-    font.pixelSize: Theme.fsBody
+    // 与 WinComboBox / WinButton / HotkeyRecorder 同档，见 Theme 字号层级
+    font.pixelSize: Theme.fsLabel
 
     background: Rectangle {
         radius: Theme.rSm
@@ -57,7 +58,7 @@ SpinBox {
         Text {
             anchors.centerIn: parent
             text: "+"
-            font.pixelSize: Theme.fsTitle
+            font.pixelSize: Theme.fsLabel
             color: root.value < root.to ? Theme.textHi : Theme.textDis
         }
     }
@@ -78,7 +79,7 @@ SpinBox {
         Text {
             anchors.centerIn: parent
             text: "−"
-            font.pixelSize: Theme.fsTitle
+            font.pixelSize: Theme.fsLabel
             color: root.value > root.from ? Theme.textHi : Theme.textDis
         }
     }

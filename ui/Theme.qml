@@ -73,6 +73,19 @@ QtObject {
     readonly property color bgMenu:   dark ? "#2C2C2E" : "#F9F9F9"  // 菜单 / 下拉浮层
     readonly property color bgInput:  dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.05)
 
+    // ================= 滚动条 =================
+    // 手柄三档：静止 / 悬停 / 按住拖动。面板本身是半透明玻璃，滚动条要是也
+    // 用低 alpha，压在图标上会糊成一片 —— 所以这里比普通控件明显"实"得多。
+    readonly property color scrollThumb:       dark ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(0, 0, 0, 0.30)
+    readonly property color scrollThumbHover:  dark ? Qt.rgba(1, 1, 1, 0.50) : Qt.rgba(0, 0, 0, 0.44)
+    readonly property color scrollThumbActive: dark ? Qt.rgba(1, 1, 1, 0.66) : Qt.rgba(0, 0, 0, 0.56)
+
+    // ================= 滚动位置字母气泡 =================
+    // 两种主题都固定用「深底 + 白字」：这个气泡是浮在图标上面的，靠对比度
+    // 取胜，跟随主题反而会在浅色面板里跟白底糊在一起。
+    readonly property color badgeBg:   Qt.rgba(0, 0, 0, dark ? 0.74 : 0.66)
+    readonly property color badgeText: "#FFFFFF"
+
     // ================= 通用交互态 =================
     // 默认底 / 悬停 / 按下 三档。控件直接挑一档用，不再各自调 alpha
     // （以前光"淡一点的底"就有 0.045 / 0.05 / 0.06 / 0.07 / 0.08 五种写法）。
@@ -121,13 +134,30 @@ QtObject {
     readonly property color knobOff:  "#FFFFFF"
 
     // ================= 字号 =================
-    readonly property int fsTiny:  10   // 极小说明（路径、版本号）
-    readonly property int fsSmall: 11   // 状态行 / 次要
-    readonly property int fsBody:  12   // 正文 / 瓦片名字 / 按钮
-    readonly property int fsLabel: 13   // 设置项标签 / 菜单项
-    readonly property int fsTitle: 14   // 窗口标题 / 搜索框
+    // 只有七档，**不要**再往界面里写裸数字。层级（以设置窗口为准）：
+    //
+    //   fsTiny   10   符号（▾ / ✕ / 路径尾巴）
+    //   fsSmall  11   状态行 / 时间戳一类弱信息
+    //   fsBody   12   正文、瓦片名字、设置项的**说明文字**
+    //   fsLabel  13   设置窗口里所有交互控件的文字
+    //                 （按钮 / 下拉框 / 数字框 / 热键框 —— 同档才显得是一套）
+    //   fsTitle  14   窗口标题、分组标题、设置项标签、搜索框
+    //   fsHead   15   预留（菜单图标字号在用）
+    //   fsBig    20   滚动位置字母气泡
+    //
+    // 分组标题和行标签**同号**（14），靠 DemiBold / Normal 区分粗细 ——
+    // 改造前分组标题 12、行标签 14，层级倒挂，看着就是不统一。
+    readonly property int fsTiny:  10
+    readonly property int fsSmall: 11
+    readonly property int fsBody:  12
+    readonly property int fsLabel: 13
+    readonly property int fsTitle: 14
     readonly property int fsHead:  15
     readonly property int fsBig:   20
+
+    // ================= 字重 =================
+    // 全项目只有两档：Normal / DemiBold。不要混 `font.bold: true`
+    // （那是 Font.Bold=75，比 DemiBold=63 粗，同一屏并排看着不齐）。
 
     // ================= 间距 =================
     readonly property int spXs: 4

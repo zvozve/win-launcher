@@ -18,7 +18,8 @@ ColumnLayout {
         Layout.fillWidth: true
         color: Theme.textHi
         font.pixelSize: Theme.fsLabel
-        font.bold: true
+        // 全项目只有 Normal / DemiBold 两档字重，不要用 font.bold
+        font.weight: Font.DemiBold
     }
 
     Text {

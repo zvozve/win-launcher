@@ -2,6 +2,10 @@
   // ---- 本机覆盖：全局 settings.json 把 cmake.generator 钉死成 MinGW Makefiles，
   //      那是给 MinGW 项目用的，会让 CMake Tools 隐藏所有 MSVC / Ninja kit。
   "cmake.generator": "Ninja",
+  // 显式置空：profile 里曾被人塞过 "cmake.toolset": "clean"（无效 toolset 名），
+  // 会和 Ninja 拼成 `-T clean` 直接让 configure 失败，且 deleteBuildDirOnCleanConfigure
+  // 会把整个 build/<Config> 连 exe 一起删掉。这里钉死为空，任何上层配置都穿不进来。
+  "cmake.toolset": "",
   "cmake.cmakePath": "C:/Container/System/Library/QT/Tools/CMake_64/bin/cmake.exe",
   "cmake.sourceDirectory": "${workspaceFolder}",
   // 布局：build/Debug、build/Release（与 build.bat 一致）

@@ -5,6 +5,7 @@
 #include <QKeyEvent>
 #include <QScreen>
 
+#include "Controller.h"
 #include "DebugTrace.h"
 #include "HotkeyManager.h"
 
@@ -196,6 +197,18 @@ bool LauncherWindow::event(QEvent *event)
     if (event->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(event);
         if (ke->key() == Qt::Key_Escape) {
+            /*
+             * Esc 先退一层：在文件夹里就回顶层，顶层才收起面板。
+             *
+             * 这个处理放在窗口级是因为 QQuickWindow::event() 比 QML 的
+             * Keys.onEscapePressed 更早拿到按键 —— 只有搜索框有焦点时才轮到
+             * SearchBar 自己处理；点了瓦片之后焦点在 GridView 上，那就走到这里。
+             * 以前这里无条件 hidePanel()，表现为「进了文件夹按 Esc 整个面板没了」。
+             */
+            if (m_controller && !m_controller->openGroup().isEmpty()) {
+                m_controller->closeGroup();
+                return true;
+            }
             hidePanel();
             return true;
         }

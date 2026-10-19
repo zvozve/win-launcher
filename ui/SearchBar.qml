@@ -168,7 +168,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "✕"
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fsTiny
                     color: Theme.textHi
                 }
 

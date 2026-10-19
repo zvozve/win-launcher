@@ -6,7 +6,7 @@ import WinLauncher.Core
  * 网格里的「文件夹」瓦片：同源多入口（J-Link 一家 44 个图标那种）折叠成一格。
  *
  * 样子照着 macOS 启动台的文件夹：圆角底板 + 2×2 的小图标 + 下方名字。
- * 点一下进去（Ctrl.openGroup），网格换成这一组里的应用；面板顶部会出现面包屑。
+ * 点一下进去（Ctrl.openGroupKey），网格换成这一组里的应用；面板顶部会出现面包屑。
  *
  * 右键菜单是应用菜单的删减版 —— 文件夹没有单一 target，
  * 所以「以管理员打开 / 打开文件所在位置 / 卸载」这几个跟目标绑定的动作不适用。
@@ -32,9 +32,20 @@ Item {
 
         delegate: WinMenuItem {}
 
+        /*
+         * 宽写死 196、padding 写死 6、内部 2px 元素缝压掉、高由菜单项累加 ——
+         * 与 AppTile 的菜单同一套机制，原因见那边注释（不写死宽度时
+         * QQuickMenu 按内容隐式宽把 popup 撑到 ~132，固定宽的图标列不进
+         * 隐式宽求和，标签会被截断；spacing=2 会在元素间塞缝；而 Basic
+         * 样式的 Menu 默认 padding=0，不显式给的话唯一一项会顶满上下边框）。
+         */
+        width: 196
+        padding: 6
+        Component.onCompleted: if (contentItem) contentItem.spacing = 0
+
         background: Rectangle {
             implicitWidth: 196
-            implicitHeight: Math.max(32, (contentItem ? contentItem.implicitHeight : 0) + 2)
+            implicitHeight: 32
             radius: Theme.rMd
             color: Theme.bgMenu
             border.width: 1

@@ -49,7 +49,7 @@ Item {
             Text {
                 text: "▾"
                 color: Theme.textLo
-                font.pixelSize: 10
+                font.pixelSize: Theme.fsTiny
             }
         }
     }
