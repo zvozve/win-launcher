@@ -94,9 +94,8 @@ QtObject {
     readonly property color statePressed: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.09)
 
     // ================= 网格瓦片 =================
-    // 瓦片比普通控件大得多，hover 高亮要更"实"才看得出来（0.10 在大格子上完全看不到）
-    readonly property color tileHover:       dark ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(0, 0, 0, 0.08)
-    readonly property color tileHoverBorder: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.08)
+    // 瓦片比普通控件大得多；hover / 选中统一用 accentSoft + focusRing（见 AppTile / FolderTile），
+    // 浅灰底在大格子上几乎看不见，不单独给 hover 色。
     readonly property color tilePlaceholder: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.10)
     // 文件夹底板比单图标亮一档，一眼能看出"这是一叠"
     readonly property color folderBoard:       dark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(1, 1, 1, 0.55)

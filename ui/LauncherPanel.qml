@@ -478,13 +478,22 @@ Item {
                 width: grid.cellWidth
                 height: grid.cellHeight
 
+                /*
+                 * ★ isCurrent 必须在 delegate 根 Item 上取，再传到子组件。
+                 * GridView.isCurrentItem 这个附加属性只在 delegate 根可靠；
+                 * 直接写进嵌套的 AppTile / FolderTile 组件里经常不刷新，
+                 * 表现就是「方向键能移动选中、但高亮永远不亮」（鼠标 hover 正常，
+                 * 因为它的高亮不靠这个属性）。
+                 */
+                readonly property bool isCurr: GridView.isCurrentItem
+
                 AppTile {
                     width: parent.width
                     height: parent.height
                     visible: !(modelData && modelData.isFolder)
                     app: modelData ? modelData.item : null
                     // 键盘选中：只在网格真的拿到焦点时才亮，鼠标 hover 时不算
-                    keySelected: grid.activeFocus && GridView.isCurrentItem
+                    keySelected: grid.activeFocus && isCurr
                     onActivated: root.launchRequested(app)
                     onAdminRequested: Ctrl.runAsAdmin(app)
                     onRevealRequested: Ctrl.revealInExplorer(app)
@@ -497,7 +506,7 @@ Item {
                     height: parent.height
                     visible: modelData && modelData.isFolder
                     folder: modelData
-                    keySelected: grid.activeFocus && GridView.isCurrentItem
+                    keySelected: grid.activeFocus && isCurr
                     onActivated: root.openFolder(modelData.groupKey)
                 }
             }

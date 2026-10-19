@@ -148,17 +148,22 @@ Item {
         }
     }
 
-    // ---- 悬停 / 键盘选中 背景框 ----
+    /*
+     * 悬停 / 键盘选中 背景框。
+     * 鼠标 hover 也用 accentSoft 填充 + focusRing 描边（和键盘选中同一套视觉），
+     * 否则大格子上 0.08 的灰底根本看不见，点了一片不知道选的是哪个。
+     * 键盘选中描边 2px、鼠标 hover 1px，保留「键盘更醒目」的层级。
+     */
     Rectangle {
         id: background
         anchors.fill: parent
         anchors.margins: 4
         radius: Theme.rLg
         color: root.keySelected ? Theme.accentSoft
-                                : (area.containsMouse ? Theme.tileHover : "transparent")
+                                : (area.containsMouse ? Theme.accentSoft : "transparent")
         border.width: root.keySelected ? 2 : 1
         border.color: root.keySelected ? Theme.focusRing
-                                       : (area.containsMouse ? Theme.tileHoverBorder : "transparent")
+                                       : (area.containsMouse ? Theme.focusRing : "transparent")
 
         Behavior on color {
             ColorAnimation { duration: Theme.durFast }

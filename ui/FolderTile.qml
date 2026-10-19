@@ -62,16 +62,16 @@ Item {
         }
     }
 
-    // ---- 悬停 / 键盘选中 背景框（和应用瓦片保持一致）----
+    // ---- 悬停 / 键盘选中 背景框（和应用瓦片保持一致：hover 也用 accent 高亮）----
     Rectangle {
         anchors.fill: parent
         anchors.margins: 4
         radius: Theme.rLg
         color: root.keySelected ? Theme.accentSoft
-                                : (area.containsMouse ? Theme.tileHover : "transparent")
+                                : (area.containsMouse ? Theme.accentSoft : "transparent")
         border.width: root.keySelected ? 2 : 1
         border.color: root.keySelected ? Theme.focusRing
-                                       : (area.containsMouse ? Theme.tileHoverBorder : "transparent")
+                                       : (area.containsMouse ? Theme.focusRing : "transparent")
 
         Behavior on color {
             ColorAnimation { duration: Theme.durFast }
