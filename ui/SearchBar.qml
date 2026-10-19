@@ -32,8 +32,6 @@ Item {
     implicitHeight: 38
 
     signal accepted()
-    // ↓：从搜索框跳进结果区（网格 / 全盘那一排），纯键盘操作不用换到鼠标
-    signal moveToGrid()
     // Tab：焦点交给下一块区域（分类条）。三块区域的循环在 LauncherPanel 接线
     signal tabForward()
     /*
@@ -150,17 +148,10 @@ Item {
                 onAccepted: root.accepted()
 
                 /*
-                 * ↓ 跳进结果区。TextField 自己不吃这个键（单行输入框没有
-                 * "下一行"的概念），不拦的话事件冒到面板上什么也不会发生。
-                 */
-                Keys.onDownPressed: (event) => {
-                    root.moveToGrid()
-                    event.accepted = true
-                }
-
-                /*
                  * Tab 不留给默认焦点链（那条链会绕进「编辑/设置」按钮），
                  * 按用户约定：Tab = 去下一块区域（分类条）。
+                 * 方向键只在搜索框内部作用（←→ 移动光标、↑↓ 不跨区），
+                 * 跨区跳转一律交给 Tab / Shift+Tab。
                  */
                 Keys.onTabPressed: (event) => {
                     root.tabForward()

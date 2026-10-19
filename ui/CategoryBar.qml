@@ -23,9 +23,9 @@ Item {
     /*
      * 键盘导航（Tab 方案的第二块区域）：
      *   Tab 从搜索框进来 → ←→ 在胶囊间移动高亮 → Enter 确认分类；
-     *   ↑ / Shift+Tab 回搜索框，↓ / Tab 去网格。焦点由 LauncherPanel 用
-     *   forceActiveFocus 手动交给 root（不走 activeFocusOnTab 链，
-     *   否则 Tab 会绕进「编辑/设置」按钮）。
+     *   跨区跳转只走 Tab（去网格）/ Shift+Tab（回搜索框），方向键不跨区。
+     *   焦点由 LauncherPanel 用 forceActiveFocus 手动交给 root
+     *   （不走 activeFocusOnTab 链，否则 Tab 会绕进「编辑/设置」按钮）。
      */
     signal moveUp()
     signal moveDown()
@@ -94,11 +94,15 @@ Item {
             event.accepted = true
             break
         case Qt.Key_Up:
+        case Qt.Key_Down:
+            // 方向键只在模块内部移动；分类条没有上/下语义，不跨区
+            // （跨区交给 Tab / Shift+Tab），吞掉避免冒泡到父级
+            event.accepted = true
+            break
         case Qt.Key_Backtab:
             root.moveUp()
             event.accepted = true
             break
-        case Qt.Key_Down:
         case Qt.Key_Tab:
             root.moveDown()
             event.accepted = true

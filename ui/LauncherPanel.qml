@@ -105,10 +105,9 @@ Item {
      *
      * 三块区域，Tab 顺序循环（Shift+Tab 反向）：
      *   搜索框 → 分类条 → 网格(或全盘结果) → 搜索框 …
-     * 方向键只在区域内移动：搜索框里是光标，分类条里 ←→ 换胶囊
+     * 方向键只负责模块内部移动：搜索框里是光标（←→），分类条里 ←→ 换胶囊
      * （Enter 确认），网格里 ↑↓←→ 换格子（Enter 启动/进文件夹）。
-     * 边界行为：搜索框 ↓ 直落网格（快捷通道）；网格首行 ↑ 回分类条，
-     * 分类条 ↑ 回搜索框。
+     * 方向键绝不跨区——跨区只能按 Tab / Shift+Tab。
      */
     function focusSearch() {
         searchBar.focusInput()
@@ -252,10 +251,6 @@ Item {
                         root.activateGridItem()
                     else if (Ctrl.searchResults.length > 0)
                         root.activateDiskItem()
-                }
-                onMoveToGrid: {
-                    if (!root.focusGrid())
-                        root.focusDiskResults()
                 }
                 onTabForward: root.focusCategories()
             }
@@ -428,14 +423,8 @@ Item {
 
                 Keys.onReturnPressed: root.activateGridItem()
                 Keys.onEnterPressed: root.activateGridItem()
-                Keys.onUpPressed: (event) => {
-                    // 首行再往上 = 回分类条（三块区域的链路：网格 → 分类 → 搜索）
-                    if (grid.currentIndex < root.columns) {
-                        root.focusCategories()
-                        event.accepted = true
-                    }
-                }
                 // Tab 继续循环：网格 → 搜索框；Shift+Tab 反向回分类条
+                // （方向键只负责网格内部移动，↑ 在首行就停在首行、不跨区）
                 Keys.onTabPressed: (event) => {
                     root.focusSearch()
                     event.accepted = true
@@ -642,14 +631,10 @@ Item {
                 clip: true
                 model: Ctrl.searchResults
 
-                // 同网格：默认不给焦点，按 ↓ 时由 focusDiskResults 接管
+                // 同网格：默认不给焦点，按 Tab 时由 focusSearch 接管轮回
                 focus: false
                 Keys.onReturnPressed: root.activateDiskItem()
                 Keys.onEnterPressed: root.activateDiskItem()
-                Keys.onUpPressed: (event) => {
-                    root.focusSearch()
-                    event.accepted = true
-                }
                 Keys.onTabPressed: (event) => {
                     root.focusSearch()
                     event.accepted = true
