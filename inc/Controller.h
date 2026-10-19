@@ -63,6 +63,12 @@ class Controller : public QObject
     // 全部格子数（不看分类/搜索），给状态栏「命中 / 总数」当分母
     Q_PROPERTY(int tileTotal READ tileTotal NOTIFY appCategoriesChanged)
     Q_PROPERTY(bool scanning READ scanning NOTIFY scanningChanged)
+    /*
+     * 本次搜索是否走了全盘（Everything）。没有「搜索源」开关了，源是按搜索类型
+     * 自动推导的（应用档=本地，其它档=全盘，写扩展名=全盘），QML 靠这个值
+     * 决定空网格时提示「全盘没找到」还是「本地没有可显示的」。
+     */
+    Q_PROPERTY(bool diskSearch READ diskSearch NOTIFY searchResultsChanged)
     Q_PROPERTY(int scanProgress READ scanProgress NOTIFY scanProgressChanged)
     Q_PROPERTY(int scanTotal READ scanTotal NOTIFY scanProgressChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY statusTextChanged)
@@ -171,6 +177,7 @@ public:
     int tileCount() const { return m_grid.size(); }
     int tileTotal() const { return m_tileTotal; }
     bool scanning() const { return m_scanning; }
+    bool diskSearch() const { return m_diskSearch; }
     int scanProgress() const { return m_scanIndex; }
     int scanTotal() const { return m_scanTasks.size(); }
     QString statusText() const { return m_status; }
@@ -263,4 +270,5 @@ private:
     QString m_status;
     QString m_error;
     bool m_scanning = false;
+    bool m_diskSearch = false;   // 本轮搜索是否走了全盘（见 diskSearch 属性）
 };

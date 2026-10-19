@@ -18,6 +18,9 @@ Item {
 
     property var folder: null
 
+    // 键盘选中（机制同 AppTile：网格有焦点且是 currentItem 时点亮）
+    property bool keySelected: false
+
     signal activated()
 
     readonly property int iconSize: Math.max(
@@ -59,16 +62,21 @@ Item {
         }
     }
 
-    // ---- 悬停背景框（和应用瓦片保持一致）----
+    // ---- 悬停 / 键盘选中 背景框（和应用瓦片保持一致）----
     Rectangle {
         anchors.fill: parent
         anchors.margins: 4
         radius: Theme.rLg
-        color: area.containsMouse ? Theme.tileHover : "transparent"
-        border.width: 1
-        border.color: area.containsMouse ? Theme.tileHoverBorder : "transparent"
+        color: root.keySelected ? Theme.accentSoft
+                                : (area.containsMouse ? Theme.tileHover : "transparent")
+        border.width: root.keySelected ? 2 : 1
+        border.color: root.keySelected ? Theme.focusRing
+                                       : (area.containsMouse ? Theme.tileHoverBorder : "transparent")
 
         Behavior on color {
+            ColorAnimation { duration: Theme.durFast }
+        }
+        Behavior on border.color {
             ColorAnimation { duration: Theme.durFast }
         }
     }
@@ -127,9 +135,14 @@ Item {
                         Image {
                             width: root.cell
                             height: root.cell
+                            /*
+                             * ★ 这里是 modelData（2 / 3），不是 index（0 / 1）。
+                             * 用 index 的话第二行会把第一行那两张图再画一遍 ——
+                             * 实测症状就是「4 个位置只有 2 个图标，两两重复」。
+                             */
                             source: {
                                 const items = root.folder ? root.folder.previewItems : null
-                                return (items && items.length > index) ? items[index].iconUrl : ""
+                                return (items && items.length > modelData) ? items[modelData].iconUrl : ""
                             }
                             sourceSize: Qt.size(root.cell * 2, root.cell * 2)
                             fillMode: Image.PreserveAspectFit

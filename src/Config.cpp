@@ -53,13 +53,24 @@ void Config::load()
     m_autostart = o.value(QStringLiteral("autostart")).toBool(false);
     m_hideOnFocusOut = o.value(QStringLiteral("hideOnFocusOut")).toBool(true);
     m_includeRegistry = o.value(QStringLiteral("includeRegistry")).toBool(true);
-    m_searchSource = o.value(QStringLiteral("searchSource")).toString(QStringLiteral("local"));
     m_followSystemTheme = o.value(QStringLiteral("followSystemTheme")).toBool(true);
     m_darkMode = o.value(QStringLiteral("darkMode")).toBool(false);
     m_gridColumns = o.value(QStringLiteral("gridColumns")).toInt(7);
     m_searchCategory = o.value(QStringLiteral("searchCategory")).toString(QStringLiteral("app"));
     m_appCategory = o.value(QStringLiteral("appCategory")).toString(QStringLiteral("all"));
-    m_groupThreshold = o.value(QStringLiteral("groupThreshold")).toInt(3);
+    m_groupThreshold = o.value(QStringLiteral("groupThreshold")).toInt(2);
+
+    /*
+     * v1 → v2：归组阈值默认值 3 → 2。
+     *
+     * 老配置里存的是 3，直接改默认值对已装用户不生效 —— 而「开始菜单里只有 2 个
+     * 入口的目录」（火绒安全软件 + 火绒日志这种）看着就是个没折起来的文件夹。
+     * 只在「值仍等于旧默认 3」时迁移，用户手动改成别的值一律尊重。
+     */
+    if (o.value(QStringLiteral("version")).toInt(1) < 2 && m_groupThreshold == 3) {
+        m_groupThreshold = 2;
+        save();
+    }
 
     // 以注册表为准，避免用户手工改动后配置与系统不一致
     m_autostart = isAutostartEnabled();
@@ -69,12 +80,11 @@ void Config::load()
 QJsonObject Config::toJson() const
 {
     QJsonObject o;
-    o.insert(QStringLiteral("version"), 1);
+    o.insert(QStringLiteral("version"), 2);
     o.insert(QStringLiteral("hotkey"), m_hotkey);
     o.insert(QStringLiteral("autostart"), m_autostart);
     o.insert(QStringLiteral("hideOnFocusOut"), m_hideOnFocusOut);
     o.insert(QStringLiteral("includeRegistry"), m_includeRegistry);
-    o.insert(QStringLiteral("searchSource"), m_searchSource);
     o.insert(QStringLiteral("followSystemTheme"), m_followSystemTheme);
     o.insert(QStringLiteral("darkMode"), m_darkMode);
     o.insert(QStringLiteral("gridColumns"), m_gridColumns);
@@ -171,15 +181,6 @@ void Config::setIncludeRegistry(bool v)
         return;
     m_includeRegistry = v;
     emit includeRegistryChanged();
-    save();
-}
-
-void Config::setSearchSource(const QString &v)
-{
-    if (m_searchSource == v)
-        return;
-    m_searchSource = v;
-    emit searchSourceChanged();
     save();
 }
 

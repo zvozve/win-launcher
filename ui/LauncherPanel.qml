@@ -100,8 +100,66 @@ Item {
                                                       AppConfig.searchCategory))
     readonly property string categoryLabel: Ctrl.searchCategoryLabels[categoryIndex]
 
+    /*
+     * ---- 键盘导航（不想为了启动一个搜到的应用去摸鼠标）----
+     *
+     * 三块区域，Tab 顺序循环（Shift+Tab 反向）：
+     *   搜索框 → 分类条 → 网格(或全盘结果) → 搜索框 …
+     * 方向键只在区域内移动：搜索框里是光标，分类条里 ←→ 换胶囊
+     * （Enter 确认），网格里 ↑↓←→ 换格子（Enter 启动/进文件夹）。
+     * 边界行为：搜索框 ↓ 直落网格（快捷通道）；网格首行 ↑ 回分类条，
+     * 分类条 ↑ 回搜索框。
+     */
     function focusSearch() {
         searchBar.focusInput()
+    }
+
+    function focusCategories() {
+        catBar.focusBar()
+    }
+
+    function focusGrid() {
+        if (Ctrl.gridItems.length === 0)
+            return false
+        if (grid.currentIndex < 0 || grid.currentIndex >= Ctrl.gridItems.length)
+            grid.currentIndex = 0
+        grid.forceActiveFocus()
+        grid.positionViewAtIndex(grid.currentIndex, GridView.Contain)
+        return true
+    }
+
+    function focusDiskResults() {
+        if (Ctrl.searchResults.length === 0)
+            return false
+        if (hitList.currentIndex < 0 || hitList.currentIndex >= Ctrl.searchResults.length)
+            hitList.currentIndex = 0
+        hitList.forceActiveFocus()
+        hitList.positionViewAtIndex(hitList.currentIndex, ListView.Contain)
+        return true
+    }
+
+    // 启动网格里键盘选中的那一格；文件夹则进去（进去后把选中项重新落到第 0 个）
+    function activateGridItem() {
+        const items = Ctrl.gridItems
+        const i = grid.currentIndex
+        if (i < 0 || i >= items.length)
+            return
+        const entry = items[i]
+        if (entry.isFolder) {
+            root.openFolder(entry.groupKey)
+            grid.currentIndex = 0
+            Qt.callLater(root.focusGrid)
+        } else {
+            root.launchRequested(entry.item)
+        }
+    }
+
+    function activateDiskItem() {
+        const hits = Ctrl.searchResults
+        const i = hitList.currentIndex
+        if (i < 0 || i >= hits.length)
+            return
+        root.launchRequested(hits[i])
     }
 
     /*
@@ -117,6 +175,9 @@ Item {
         AppConfig.appCategory = "all"
         // 进过文件夹的话也回到顶层（Ctrl.closeGroup 在顶层时是空操作）
         Ctrl.closeGroup()
+        // 键盘选中也归零，否则下次 ↓ 会落在上次那个位置（看起来像跳了一格）
+        grid.currentIndex = 0
+        hitList.currentIndex = 0
     }
 
     /*
@@ -179,15 +240,24 @@ Item {
                         root.closeRequested()
                 }
                 onAccepted: {
-                    // 回车打开第一个格子的东西：是应用就启动，是文件夹就进去
-                    const first = Ctrl.gridItems.length > 0 ? Ctrl.gridItems[0] : null
-                    if (!first)
-                        return
-                    if (first.isFolder)
-                        root.openFolder(first.groupKey)
-                    else
-                        root.launchRequested(first.item)
+                    /*
+                     * 回车 = 直接启动第一项，不用先用 ↓ 选中。
+                     * 两层结果：网格（应用/文件夹）优先，网格为空时用全盘命中
+                     * —— 默认只在「应用」档查本地，搜 pdf/xlsx 时网格是空的，
+                     * 以前这种时候回车毫无反应，只能去点下面那排图标。
+                     */
+                    grid.currentIndex = 0
+                    hitList.currentIndex = 0
+                    if (Ctrl.gridItems.length > 0)
+                        root.activateGridItem()
+                    else if (Ctrl.searchResults.length > 0)
+                        root.activateDiskItem()
                 }
+                onMoveToGrid: {
+                    if (!root.focusGrid())
+                        root.focusDiskResults()
+                }
+                onTabForward: root.focusCategories()
             }
 
             PillButton {
@@ -203,7 +273,14 @@ Item {
 
         // ---- 分类标签（对齐 macOS Applications 面板那一排）----
         CategoryBar {
+            id: catBar
             Layout.fillWidth: true
+            onMoveUp: root.focusSearch()
+            onMoveDown: {
+                // 分类条往下 = 网格；搜索态下网格可能为空，那就落全盘结果
+                if (!root.focusGrid())
+                    root.focusDiskResults()
+            }
         }
 
         // ---- 面包屑：进了文件夹才出现 ----
@@ -271,6 +348,12 @@ Item {
             id: gridWrap
             Layout.fillWidth: true
             Layout.fillHeight: true
+            /*
+             * 试过「只搜到全盘文件时把网格整块 visible: false」收掉空白 ——
+             * 观感是错的：ColumnLayout 在没有 fillHeight 项时会把剩余高度
+             * 摊到每个子项上，搜索栏、分类条全被拉低（实测 search bar 下移 47px、
+             * 分类条下移 147px）。宁可留空白，也别动这个布局。
+             */
 
             // 滚动条贴在最右边，GridView 不需要再留右边距：格宽约 140、
             // 图标 57 居中，最后一列的图标离右边缘还有 50 多 px，
@@ -336,6 +419,32 @@ Item {
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
 
+                /*
+                 * 键盘焦点：只在用户按 ↓ 从搜索框跳下来时给（见 focusGrid）。
+                 * 平时保持 false，否则面板弹出时 Ctrl+F 之类的焦点会在网格上，
+                 * 搜索框反而敲不进字。
+                 */
+                focus: false
+
+                Keys.onReturnPressed: root.activateGridItem()
+                Keys.onEnterPressed: root.activateGridItem()
+                Keys.onUpPressed: (event) => {
+                    // 首行再往上 = 回分类条（三块区域的链路：网格 → 分类 → 搜索）
+                    if (grid.currentIndex < root.columns) {
+                        root.focusCategories()
+                        event.accepted = true
+                    }
+                }
+                // Tab 继续循环：网格 → 搜索框；Shift+Tab 反向回分类条
+                Keys.onTabPressed: (event) => {
+                    root.focusSearch()
+                    event.accepted = true
+                }
+                Keys.onBacktabPressed: (event) => {
+                    root.focusCategories()
+                    event.accepted = true
+                }
+
                 cellWidth: width / root.columns
                 // 行高取容器高度的 1/4（向下取整）：静止时一屏正好 4 行，
                 // 滚动本身是自由的（不做吸附、不锁位置）。取整是为了让 4 行严格
@@ -374,6 +483,8 @@ Item {
                     height: parent.height
                     visible: !(modelData && modelData.isFolder)
                     app: modelData ? modelData.item : null
+                    // 键盘选中：只在网格真的拿到焦点时才亮，鼠标 hover 时不算
+                    keySelected: grid.activeFocus && GridView.isCurrentItem
                     onActivated: root.launchRequested(app)
                     onAdminRequested: Ctrl.runAsAdmin(app)
                     onRevealRequested: Ctrl.revealInExplorer(app)
@@ -386,25 +497,36 @@ Item {
                     height: parent.height
                     visible: modelData && modelData.isFolder
                     folder: modelData
+                    keySelected: grid.activeFocus && GridView.isCurrentItem
                     onActivated: root.openFolder(modelData.groupKey)
                 }
             }
 
+            /*
+             * 空网格的提示。三种情况要分开说：
+             *   1. 有搜索词 + 下面那节已经有全盘命中 → 不写字（结果就在下面）
+             *   2. 有搜索词 + 全盘也没找到 → 「全盘没有找到」
+             *   3. 没搜索词 → 应用档说「没有可显示的」，文件档提示敲关键词
+             */
             Text {
                 anchors.centerIn: parent
                 width: parent.width - 40
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
-                visible: Ctrl.gridItems.length === 0
                 color: Theme.textMid
                 font.pixelSize: Theme.fsLabel
                 text: Ctrl.scanning
                       ? qsTr("正在扫描已安装应用…")
                       : (Ctrl.query.length > 0
-                         ? qsTr("没有匹配「%1」的%2").arg(Ctrl.query).arg(root.categoryLabel)
-                         : (AppConfig.searchSource === "everything"
+                         ? (Ctrl.searchResults.length > 0
+                            ? ""
+                            : (Ctrl.diskSearch
+                               ? qsTr("全盘没有找到「%1」").arg(Ctrl.query)
+                               : qsTr("没有匹配「%1」的%2").arg(Ctrl.query).arg(root.categoryLabel)))
+                         : (Ctrl.diskSearch
                             ? qsTr("输入关键词后从全盘搜索%1").arg(root.categoryLabel)
-                            : qsTr("没有可显示的%1，试试切到「全盘」").arg(root.categoryLabel)))
+                            : qsTr("没有可显示的%1").arg(root.categoryLabel)))
+                visible: Ctrl.gridItems.length === 0 && text.length > 0
             }
 
             /*
@@ -491,33 +613,72 @@ Item {
             visible: Ctrl.searchResults.length > 0
 
             Text {
-                text: qsTr("全盘搜索（Everything）· %1").arg(root.categoryLabel)
+                text: qsTr("全盘搜索（Everything）· %1 个").arg(Ctrl.searchResults.length)
                 color: Theme.textMid
                 font.pixelSize: Theme.fsSmall
             }
 
+            /*
+             * 全盘命中的多半是普通文件（pdf / xlsx / docx…），图标全是同一张
+             * 文件类型图标 —— 只给图标等于没给信息，所以这里必须带文件名。
+             * 名字一行、中间省略（扩展名留在尾巴上，比首省略有用），
+             * 鼠标停留再给完整路径。
+             */
             ListView {
+                id: hitList
                 Layout.fillWidth: true
-                height: 46
+                height: 64
                 orientation: ListView.Horizontal
-                spacing: 6
+                spacing: 4
                 clip: true
                 model: Ctrl.searchResults
 
+                // 同网格：默认不给焦点，按 ↓ 时由 focusDiskResults 接管
+                focus: false
+                Keys.onReturnPressed: root.activateDiskItem()
+                Keys.onEnterPressed: root.activateDiskItem()
+                Keys.onUpPressed: (event) => {
+                    root.focusSearch()
+                    event.accepted = true
+                }
+                Keys.onTabPressed: (event) => {
+                    root.focusSearch()
+                    event.accepted = true
+                }
+
                 delegate: Rectangle {
-                    width: 46
-                    height: 46
-                    radius: Theme.rLg
-                    color: hitArea.containsMouse ? Theme.stateHover : "transparent"
+                    // 键盘选中项（横向列表用 ←→ 走）
+                    readonly property bool keyCurrent: hitList.activeFocus && ListView.isCurrentItem
+
+                    width: 108
+                    height: 64
+                    radius: Theme.rMd
+                    color: hitArea.containsMouse || keyCurrent ? Theme.stateHover : "transparent"
+                    border.width: keyCurrent ? 1 : 0
+                    border.color: Theme.focusRing
 
                     Image {
-                        anchors.centerIn: parent
+                        id: hitIcon
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        y: 4
                         width: 32
                         height: 32
                         source: modelData ? modelData.iconUrl : ""
                         sourceSize: Qt.size(64, 64)
                         fillMode: Image.PreserveAspectFit
                         asynchronous: true
+                    }
+
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: hitIcon.bottom
+                        anchors.topMargin: 3
+                        width: parent.width - 8
+                        text: modelData ? modelData.name : ""
+                        color: Theme.textMid
+                        font.pixelSize: Theme.fsTiny
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideMiddle
                     }
 
                     MouseArea {

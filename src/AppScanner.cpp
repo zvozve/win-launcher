@@ -62,6 +62,41 @@ bool isLaunchableTarget(const QString &target)
     return kExts.contains(QFileInfo(target).suffix().toLower());
 }
 
+/*
+ * 目标本身是「卸载程序」的条目，不收。
+ *
+ * 注册表 Uninstall 项的 DisplayIcon 有相当一部分直接指向软件自带的卸载器。
+ * 只看 DisplayName 拦不住 —— 实测本机：
+ *   - 嘉立创EDA(专业版) 3.2.149 → C:\Program Files\lceda-pro\unins000.exe
+ *   - MSYS2                  → C:\msys64\uninstall.exe
+ * 名字都是正常软件名，图标却是卸载器，于是在启动台里表现为
+ * 「和文件夹同名 / 多带一个版本号的重复图标」，点下去弹的是卸载确认框。
+ */
+bool isUninstallerTarget(const QString &path)
+{
+    /*
+     * 路径本身在「卸载信息」目录里的也算：本机 Canon 那条
+     * DisplayName=「Canon iR C3125」、目标是
+     * C:\Windows\system32\CanonMF Uninstaller Information\{...}\misc\DelDrv.exe，
+     * 只看文件名（DelDrv）和显示名都拦不住，但目录名已经说明它是什么了。
+     */
+    if (path.contains(QLatin1String("uninstaller"), Qt::CaseInsensitive)
+        || path.contains(QLatin1String("\\uninstall"), Qt::CaseInsensitive))
+        return true;
+
+    const QString base = QFileInfo(path).completeBaseName().toLower();
+    static const QStringList kPrefixes = {
+        QStringLiteral("unins"),   // unins000 / uninstall / uninst
+        QStringLiteral("unwise"),  // InstallShield 的老卸载器
+        QStringLiteral("uninst"),
+    };
+    for (const QString &p : kPrefixes) {
+        if (base.startsWith(p))
+            return true;
+    }
+    return false;
+}
+
 QString knownFolder(int csidl)
 {
     wchar_t buf[MAX_PATH] = {0};
@@ -201,6 +236,9 @@ void appendRegistryTasks(QList<AppScanner::Task> *out, QSet<QString> *seenTarget
                 continue;
             if (!QFileInfo::exists(iconPath))
                 continue;
+            // 图标指向卸载器 = 这条注册表项其实是「卸载入口」（见 isUninstallerTarget）
+            if (isUninstallerTarget(iconPath))
+                continue;
 
             const QString key = QDir::toNativeSeparators(iconPath).toLower();
             if (seenTargets->contains(key))
@@ -283,6 +321,11 @@ bool AppScanner::runTask(const Task &task, ScannedApp *out)
             wlTrace(QStringLiteral("scan: skip non-launchable -> ") + info.target);
             return false;
         }
+        // 快捷方式名字没写「卸载」但目标就是卸载器（少见，兜一层）
+        if (isUninstallerTarget(info.target)) {
+            wlTrace(QStringLiteral("scan: skip uninstaller -> ") + info.target);
+            return false;
+        }
         app.kind = AppItem::KindDesktop;
         app.target = info.target;
         app.arguments = info.arguments;
@@ -327,19 +370,44 @@ AppItem *AppScanner::fromAnyPath(const QString &path, QObject *parent)
     if (!fi.exists() || !fi.isFile())
         return nullptr;
 
+    /*
+     * ★ 普通文件（pdf / xlsx / docx / png…）也要能造出条目。
+     *
+     * 全盘搜索（Everything）命中的就是这些文件；以前这里对「非 lnk / 非 exe」
+     * 一律 return nullptr，于是 Controller 把它们全丢掉 —— Everything 明明查到
+     * 8 个「1.4 pdf」，界面却写「全盘没有找到」（2026-10-19 实测定位）。
+     *
+     * 这类条目没有可执行目标，走 KindManual：Launcher 里 QProcess 起不来会退到
+     * ShellExecute("open")，由系统用默认程序打开。图标由 SHGetFileInfo 提供，
+     * 就是资源管理器里那个 pdf / xlsx 图标。
+     */
+    const bool link = ShortcutResolver::isLinkFile(clean) || ShortcutResolver::isUrlFile(clean);
+    const bool exe = fi.suffix().compare(QLatin1String("exe"), Qt::CaseInsensitive) == 0;
+    if (!link && !exe) {
+        ScannedApp data;
+        data.name = fi.completeBaseName();
+        data.kind = AppItem::KindManual;
+        data.target = fi.absoluteFilePath();
+        data.workingDir = fi.absolutePath();
+        data.sourcePath = fi.absoluteFilePath();
+        data.category = AppCategory::classify(data.name, data.target);
+        data.iconPath = IconProvider::iconForPath(data.target);
+        data.seed = fi.absoluteFilePath().toLower(); // 同一文件多轮搜索得到同一个 id
+        data.removable = false;
+        return toItem(data, parent);
+    }
+
     Task task;
     task.path = fi.absoluteFilePath();
     task.name = fi.completeBaseName();
 
-    if (ShortcutResolver::isLinkFile(clean) || ShortcutResolver::isUrlFile(clean)) {
+    if (link) {
         task.kind = Task::Link;
         task.seed = clean.toLower();
-    } else if (fi.suffix().compare(QLatin1String("exe"), Qt::CaseInsensitive) == 0) {
+    } else {
         task.kind = Task::Executable;
         task.name = fi.completeBaseName();
         task.seed = fi.absoluteFilePath().toLower();
-    } else {
-        return nullptr;
     }
 
     ScannedApp data;

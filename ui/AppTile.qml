@@ -21,6 +21,12 @@ Item {
 
     property var app: null
 
+    /*
+     * 键盘选中。由 LauncherPanel 在网格拿到焦点时按 GridView.isCurrentItem 设置，
+     * 和鼠标 hover 分开：两者可以同时成立，视觉上以键盘选中为准（更醒目）。
+     */
+    property bool keySelected: false
+
     signal activated()
     signal adminRequested()
     signal revealRequested()
@@ -142,15 +148,17 @@ Item {
         }
     }
 
-    // ---- 鼠标悬停背景框 ----
+    // ---- 悬停 / 键盘选中 背景框 ----
     Rectangle {
         id: background
         anchors.fill: parent
         anchors.margins: 4
         radius: Theme.rLg
-        color: area.containsMouse ? Theme.tileHover : "transparent"
-        border.width: 1
-        border.color: area.containsMouse ? Theme.tileHoverBorder : "transparent"
+        color: root.keySelected ? Theme.accentSoft
+                                : (area.containsMouse ? Theme.tileHover : "transparent")
+        border.width: root.keySelected ? 2 : 1
+        border.color: root.keySelected ? Theme.focusRing
+                                       : (area.containsMouse ? Theme.tileHoverBorder : "transparent")
 
         Behavior on color {
             ColorAnimation { duration: Theme.durFast }

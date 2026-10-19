@@ -98,13 +98,32 @@ void AppItem::setCategory(const QString &v)
 /*
  * 归组键的最后一段就是文件夹名（"SEGGER\J-Link V7.98b" -> "J-Link V7.98b"）。
  * 放在 C++ 里算，QML 的文件夹瓦片上直接绑 groupLabel 就行。
+ *
+ * 末段是纯技术目录名时往上一层取：本机的火绒是
+ * "火绒安全实验室\Sysdiag"，直接取末段会得到一个叫「Sysdiag」的文件夹，
+ * 用户根本认不出那是什么。同理还有 bin / tools / x64 这类。
  */
 QString AppItem::groupLabel() const
 {
     if (m_group.isEmpty())
         return QString();
-    const int slash = m_group.lastIndexOf(QLatin1Char('\\'));
-    return slash < 0 ? m_group : m_group.mid(slash + 1);
+    QStringList parts = m_group.split(QLatin1Char('\\'), Qt::SkipEmptyParts);
+    if (parts.isEmpty())
+        return QString();
+
+    static const QStringList kGeneric = {
+        QStringLiteral("sysdiag"), QStringLiteral("bin"),
+        QStringLiteral("tools"),   QStringLiteral("tool"),
+        QStringLiteral("utils"),   QStringLiteral("utilities"),
+        QStringLiteral("app"),     QStringLiteral("apps"),
+        QStringLiteral("application"), QStringLiteral("applications"),
+        QStringLiteral("x86"),     QStringLiteral("x64"),
+        QStringLiteral("win32"),   QStringLiteral("win64"),
+        QStringLiteral("amd64"),
+    };
+    while (parts.size() > 1 && kGeneric.contains(parts.last().toLower()))
+        parts.removeLast();
+    return parts.last();
 }
 
 void AppItem::setGroup(const QString &v)

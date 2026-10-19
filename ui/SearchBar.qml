@@ -5,10 +5,15 @@ import WinLauncher.Core
 
 /*
  * 搜索栏（左 → 右）：
- *   搜索类型选择器 | 放大镜 | 输入框 | 清空 | 搜索源（本地 / 全盘）
+ *   搜索类型选择器 | 放大镜 | 输入框 | 清空
  *
  * 类型选择器改的是 AppConfig.searchCategory，Controller 会同时用它做
- * 本地扩展名过滤和 Everything 的 ext: 过滤。
+ * 本地扩展名过滤和 Everything 的 ext: 过滤。**搜索源没有开关**：
+ *   应用档 → 只查本地；其它档 → 自动查全盘；词里写了扩展名 → 也查全盘。
+ * 细节见 Controller::rebuildVisible 第 5 步。
+ *
+ * 输入框支持 Everything 的原生写法：「报告 xlsx」「"季度 报告" pdf」
+ * 「ext:pdf;doc」，多个词是 AND 关系（见 SearchQuery）。
  *
  * 颜色全部走 Theme，不再需要 dark / textColor / hintColor 三个透传参数。
  */
@@ -24,12 +29,13 @@ Item {
      */
     property string text: ""
 
-    readonly property bool everythingReady: Ctrl.everything.available
-    readonly property string source: AppConfig.searchSource
-
     implicitHeight: 38
 
     signal accepted()
+    // ↓：从搜索框跳进结果区（网格 / 全盘那一排），纯键盘操作不用换到鼠标
+    signal moveToGrid()
+    // Tab：焦点交给下一块区域（分类条）。三块区域的循环在 LauncherPanel 接线
+    signal tabForward()
     /*
      * Esc 按下且输入框是空的。面板据此决定「退出文件夹」还是「收起面板」。
      * 输入框非空时 Esc 只清空文字，不发这个信号。
@@ -124,7 +130,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                placeholderText: qsTr("搜索")
+                placeholderText: qsTr("搜索应用，或输入「文件名 xlsx」搜文件")
                 placeholderTextColor: Theme.textLo
                 color: Theme.textHi
                 font.pixelSize: Theme.fsTitle
@@ -142,6 +148,24 @@ Item {
                 }
 
                 onAccepted: root.accepted()
+
+                /*
+                 * ↓ 跳进结果区。TextField 自己不吃这个键（单行输入框没有
+                 * "下一行"的概念），不拦的话事件冒到面板上什么也不会发生。
+                 */
+                Keys.onDownPressed: (event) => {
+                    root.moveToGrid()
+                    event.accepted = true
+                }
+
+                /*
+                 * Tab 不留给默认焦点链（那条链会绕进「编辑/设置」按钮），
+                 * 按用户约定：Tab = 去下一块区域（分类条）。
+                 */
+                Keys.onTabPressed: (event) => {
+                    root.tabForward()
+                    event.accepted = true
+                }
 
                 Keys.onEscapePressed: (event) => {
                     if (field.text.length > 0) {
@@ -178,56 +202,6 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.clear()
-                }
-            }
-
-            // ---- 搜索源：本地 / 全盘 ----
-            Row {
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 2
-
-                Repeater {
-                    model: [
-                        { key: "local", label: qsTr("本地") },
-                        { key: "everything", label: qsTr("全盘") }
-                    ]
-
-                    delegate: Rectangle {
-                        required property var modelData
-                        readonly property bool current: root.source === modelData.key
-
-                        width: 44
-                        height: 22
-                        radius: Theme.rSm
-                        color: current
-                               ? Theme.accent
-                               : (srcArea.containsMouse ? Theme.stateHover : "transparent")
-
-                        Behavior on color {
-                            ColorAnimation { duration: Theme.durFast }
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: modelData.label
-                            font.pixelSize: Theme.fsSmall
-                            color: current ? Theme.accentText : Theme.textLo
-                        }
-
-                        MouseArea {
-                            id: srcArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (modelData.key === "everything" && !root.everythingReady) {
-                                    Ctrl.notifyError(qsTr("未检测到 Everything64.dll，仍使用本地过滤"))
-                                    return
-                                }
-                                AppConfig.searchSource = modelData.key
-                            }
-                        }
-                    }
                 }
             }
         }

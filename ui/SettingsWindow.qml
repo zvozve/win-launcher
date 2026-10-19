@@ -208,23 +208,11 @@ Window {
                     Layout.fillWidth: true
 
                     SettingRow {
-                        label: qsTr("默认搜索源")
+                        label: qsTr("全盘搜索")
                         hint: Ctrl.everything.available
-                              ? qsTr("Everything 已就绪：%1").arg(Ctrl.everything.loadedPath)
-                              : qsTr("未检测到 Everything64.dll，仅本地过滤")
-
-                        WinComboBox {
-                            model: [qsTr("本地过滤"), qsTr("全盘（Everything）")]
-                            currentIndex: AppConfig.searchSource === "everything" ? 1 : 0
-                            onActivated: (index) => {
-                                if (index === 1 && !Ctrl.everything.available) {
-                                    Ctrl.notifyError(qsTr("未检测到 Everything64.dll，仍使用本地过滤"))
-                                    currentIndex = 0
-                                    return
-                                }
-                                AppConfig.searchSource = index === 1 ? "everything" : "local"
-                            }
-                        }
+                              ? qsTr("已接入 Everything（%1）。搜索「文档/图片/视频/音乐/压缩包」时自动查全盘，词里写扩展名（如「报告 xlsx」）也会查全盘。")
+                                    .arg(Ctrl.everything.loadedPath)
+                              : qsTr("未检测到 Everything64.dll，文件搜索只能靠本地过滤。运行 scripts\\fetch-everything-sdk.bat 可取回。")
                     }
 
                     Sep {}

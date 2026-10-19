@@ -33,6 +33,7 @@
 #include "IconProvider.h"
 #include "Launcher.h"
 #include "LauncherWindow.h"
+#include "SearchQuery.h"
 
 namespace {
 
@@ -77,7 +78,6 @@ Controller::Controller(Config *config, EverythingSearch *everything, QObject *pa
      */
     connect(m_config, &Config::appCategoryChanged, this, &Controller::rebuildVisible);
     connect(m_config, &Config::searchCategoryChanged, this, &Controller::rebuildVisible);
-    connect(m_config, &Config::searchSourceChanged, this, &Controller::rebuildVisible);
     // 归组阈值改了要立刻重新折叠（设置窗口里是个数字选择）
     connect(m_config, &Config::groupThresholdChanged, this, &Controller::rebuildVisible);
 
@@ -358,13 +358,33 @@ void Controller::rebuildVisible()
     const bool categoryFiltered = !appCat.isEmpty() && appCat != QLatin1String("all");
 
     const QString searchCat = m_config->searchCategory();
-    const QStringList exts =
-        Config::categoryExtensions(searchCat).split(QLatin1Char(';'), Qt::SkipEmptyParts);
-    const QSet<QString> allowed(exts.begin(), exts.end());
-    // "app" 这一档不加扩展名限制（扫进来的本来就是程序，手动条目也想留着）
-    const bool typeFiltered = !allowed.isEmpty() && searchCat != QLatin1String("app");
+    const SearchQuery query = SearchQuery::parse(m_query);
+    const QString needle = query.text();
 
-    const QString needle = m_query.trimmed();
+    /*
+     * 扩展名白名单有两个来源，用户写了扩展名时以用户为准：
+     *   1. 搜索栏的类型选择器（应用/文档/图片…）→ Config::categoryExtensions
+     *   2. 搜索词里自带的扩展名（"报告 xlsx" 里的 xlsx）→ SearchQuery::extensions
+     * 后者覆盖前者。不覆盖的话，选着「应用」却敲 xlsx 会被 exe;lnk 白名单挡死，
+     * 结果永远是 0 —— 这正是「原生搜索模式」要避免的。
+     */
+    const QStringList typeExts =
+        query.hasExtensionToken()
+            ? query.extensions()
+            : Config::categoryExtensions(searchCat).split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    const QSet<QString> allowed(typeExts.begin(), typeExts.end());
+    // "app" 这一档不加扩展名限制（扫进来的本来就是程序，手动条目也想留着）；
+    // 但用户显式写了扩展名时照常按它过滤。
+    const bool typeFiltered =
+        !allowed.isEmpty() && (query.hasExtensionToken() || searchCat != QLatin1String("app"));
+
+    /*
+     * 关键词匹配是 AND 语义：`报告 xlsx` 要求两个词都命中。
+     * 命中范围是 name 或 target，而 target 是完整路径（含扩展名），
+     * 所以 "报告 xlsx" 能直接匹配 D:\…\报告.xlsx，不用再单独判扩展名。
+     */
+    const QStringList kws = query.keywords();
+
     QList<QObject *> matched;
     matched.reserve(m_apps.size());
     for (QObject *obj : std::as_const(m_apps)) {
@@ -375,10 +395,17 @@ void Controller::rebuildVisible()
             continue;
         if (typeFiltered && !allowed.contains(QFileInfo(item->target()).suffix().toLower()))
             continue;
-        if (!needle.isEmpty() && !item->name().contains(needle, Qt::CaseInsensitive)
-            && !item->target().contains(needle, Qt::CaseInsensitive)) {
-            continue;
+        bool hit = true;
+        for (const QString &kw : kws) {
+            if (item->name().contains(kw, Qt::CaseInsensitive)
+                || item->target().contains(kw, Qt::CaseInsensitive)) {
+                continue;
+            }
+            hit = false;
+            break;
         }
+        if (!hit)
+            continue;
         matched.append(obj);
     }
     m_visible = matched;
@@ -452,14 +479,17 @@ void Controller::rebuildVisible()
      * ★ 数字用**格子数**（m_grid.size()）而不是应用数：一个文件夹在网格里
      *   只占一格，计数也只算一次（用户明确要求）。所以 221 个应用折成 152 格时
      *   这里写 152；进文件夹后写成员数。
+     *
+     * ★ 有搜索词时**延后到第 5 步之后再设**：全盘命中的数字那时候才算出来，
+     *   否则搜「1.4 pdf」会写「匹配 · 0 个」，而下面明明躺着 8 个文件。
      */
     const int shownTiles = m_grid.size();
-    if (!needle.isEmpty())
-        setStatus(QStringLiteral("匹配「%1」· %2 个").arg(needle).arg(shownTiles));
-    else if (categoryFiltered)
-        setStatus(QStringLiteral("分类「%1」· %2 个").arg(AppCategory::label(appCat)).arg(shownTiles));
-    else
-        setStatus(QStringLiteral("共 %1 个").arg(shownTiles));
+    if (needle.isEmpty())
+        setStatus(categoryFiltered
+                      ? QStringLiteral("分类「%1」· %2 个")
+                            .arg(AppCategory::label(appCat))
+                            .arg(shownTiles)
+                      : QStringLiteral("共 %1 个").arg(shownTiles));
 
     /*
      * ★ 这里不比对「变了没有」：openGroupKey / closeGroup 都是「先改 m_openGroup
@@ -494,14 +524,31 @@ void Controller::rebuildVisible()
                              : QStringLiteral("  open=%1 (%2)").arg(openGroupLabel()).arg(m_grid.size())));
     }
 
-    // 5) Everything 全盘结果（可选搜索源，见 doc/2.方案设计.md）
+    /*
+     * 5) Everything 全盘结果
+     *
+     * 搜索源不再有开关，按搜索类型自动推导：
+     *   应用档 → 只在本地（扫进来的本来就是程序，全盘搜 exe 意义不大）；
+     *   其它档（文档/图片/视频/音乐/压缩包/全部）→ 走全盘；
+     *   任何档只要用户自己写了扩展名（"报告 xlsx"）→ 走全盘。
+     * Everything64.dll 缺失时 wantDisk 自然为 false，退回纯本地过滤。
+     */
     const QList<QObject *> previous = m_searchResults;
     QList<QObject *> extra;
-    if (!needle.isEmpty() && m_config->searchSource() == QLatin1String("everything")
-        && m_everything && m_everything->isAvailable()) {
-        // 类型集来自搜索栏最左侧那个选择器（Config::categoryExtensions）
-        const QStringList hits =
-            m_everything->search(needle, 60, Config::categoryExtensions(searchCat));
+    const bool wantDisk = !needle.isEmpty() && m_everything && m_everything->isAvailable()
+                          && (searchCat != QLatin1String("app") || query.hasExtensionToken());
+    m_diskSearch = wantDisk;
+
+    if (wantDisk) {
+        /*
+         * 用户写了扩展名时，查询串原样交给 Everything（它自己认 ext:、引号、
+         * 多词的 AND 语义），不再追加类型白名单；否则才用类型选择器的白名单。
+         */
+        const QString expr = query.expression().isEmpty() ? needle : query.expression();
+        const QStringList hits = query.hasExtensionToken()
+                                     ? m_everything->search(expr, 96, QString())
+                                     : m_everything->search(expr, 96,
+                                                            Config::categoryExtensions(searchCat));
         QSet<QString> known;
         for (QObject *obj : std::as_const(m_apps)) {
             if (auto *item = qobject_cast<AppItem *>(obj))
@@ -509,7 +556,7 @@ void Controller::rebuildVisible()
         }
         for (const QString &hit : hits) {
             if (!allowed.isEmpty() && !allowed.contains(QFileInfo(hit).suffix().toLower()))
-                continue; // 兜一道：只留当前搜索类型允许的扩展名
+                continue; // 兜一道：只留当前类型（或用户写的扩展名）允许的
             if (known.contains(QFileInfo(hit).absoluteFilePath().toLower()))
                 continue;
             AppItem *item = AppScanner::fromAnyPath(hit, this);
@@ -517,7 +564,7 @@ void Controller::rebuildVisible()
                 continue;
             item->setRemovable(false);
             extra.append(item);
-            if (extra.size() >= 24)
+            if (extra.size() >= 48)
                 break;
         }
     }
@@ -530,6 +577,34 @@ void Controller::rebuildVisible()
         }
     }
     m_searchResults = extra;
+
+    // 有搜索词时的状态行（全盘命中数这会儿才知道，见上面那段注释）
+    if (!needle.isEmpty()) {
+        setStatus(extra.isEmpty()
+                      ? QStringLiteral("匹配「%1」· %2 个").arg(needle).arg(shownTiles)
+                      : (shownTiles > 0
+                             ? QStringLiteral("匹配「%1」· 本地 %2 + 全盘 %3 个")
+                                   .arg(needle)
+                                   .arg(shownTiles)
+                                   .arg(extra.size())
+                             : QStringLiteral("匹配「%1」· 全盘 %2 个").arg(needle).arg(extra.size())));
+    }
+
+    /*
+     * 搜索打点：解析结果（关键词 / 显式扩展名）、走的哪条路、两侧命中数。
+     * 「原生搜索」这类语法不好靠肉眼判断对不对，--trace 里留一份。
+     */
+    if (!needle.isEmpty()) {
+        wlTrace(QStringLiteral("search: '%1' kw=[%2] ext=[%3] cat=%4 disk=%5 "
+                               "localHits=%6 diskHits=%7")
+                    .arg(needle)
+                    .arg(query.keywords().join(QLatin1Char(',')))
+                    .arg(query.extensions().join(QLatin1Char(',')))
+                    .arg(searchCat)
+                    .arg(wantDisk ? 1 : 0)
+                    .arg(shownTiles)
+                    .arg(extra.size()));
+    }
 
     if (appsListChanged)
         emit appsChanged();
@@ -643,6 +718,12 @@ QString Controller::openGroupLabel() const
 {
     if (m_openGroup.isEmpty())
         return QString();
+    // 和文件夹瓦片用同一套命名规则（末段是 bin / Sysdiag 这类技术目录名时往上一层）
+    for (QObject *obj : std::as_const(m_apps)) {
+        auto *item = qobject_cast<AppItem *>(obj);
+        if (item && item->group() == m_openGroup)
+            return item->groupLabel();
+    }
     const int slash = m_openGroup.lastIndexOf(QLatin1Char('\\'));
     return slash < 0 ? m_openGroup : m_openGroup.mid(slash + 1);
 }

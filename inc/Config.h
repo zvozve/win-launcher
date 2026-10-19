@@ -18,7 +18,6 @@ class Config : public QObject
                    NOTIFY hideOnFocusOutChanged)
     Q_PROPERTY(bool includeRegistry READ includeRegistry WRITE setIncludeRegistry
                    NOTIFY includeRegistryChanged)
-    Q_PROPERTY(QString searchSource READ searchSource WRITE setSearchSource NOTIFY searchSourceChanged)
     Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY darkModeChanged)
     Q_PROPERTY(bool followSystemTheme READ followSystemTheme WRITE setFollowSystemTheme
                    NOTIFY followSystemThemeChanged)
@@ -48,7 +47,6 @@ public:
     bool autostart() const { return m_autostart; }
     bool hideOnFocusOut() const { return m_hideOnFocusOut; }
     bool includeRegistry() const { return m_includeRegistry; }
-    QString searchSource() const { return m_searchSource; }
     bool darkMode() const { return m_darkMode; }
     bool followSystemTheme() const { return m_followSystemTheme; }
     int gridColumns() const { return m_gridColumns; }
@@ -61,7 +59,6 @@ public:
     void setAutostart(bool v);
     void setHideOnFocusOut(bool v);
     void setIncludeRegistry(bool v);
-    void setSearchSource(const QString &v);
     void setDarkMode(bool v);
     void setFollowSystemTheme(bool v);
     void setGridColumns(int v);
@@ -90,7 +87,6 @@ signals:
     void autostartChanged();
     void hideOnFocusOutChanged();
     void includeRegistryChanged();
-    void searchSourceChanged();
     void darkModeChanged();
     void followSystemThemeChanged();
     void gridColumnsChanged();
@@ -105,11 +101,10 @@ private:
     bool m_autostart = false;
     bool m_hideOnFocusOut = true;
     bool m_includeRegistry = true;
-    QString m_searchSource = QStringLiteral("local");
     bool m_darkMode = false;
     bool m_followSystemTheme = true;
     int m_gridColumns = 7;
     QString m_searchCategory = QStringLiteral("app");
     QString m_appCategory = QStringLiteral("all");
-    int m_groupThreshold = 3;
+    int m_groupThreshold = 2;
 };

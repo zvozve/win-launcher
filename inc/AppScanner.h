@@ -78,6 +78,6 @@ public:
     // 由扫描结果构造条目
     static AppItem *toItem(const ScannedApp &data, QObject *parent);
 
-    // 单个 .lnk / .exe / .url 路径 -> AppItem（拖入时复用）
+    // 单个路径 -> AppItem：lnk/exe/url 走解析，其它文件（pdf/xlsx…）造 KindManual 条目
     static AppItem *fromAnyPath(const QString &path, QObject *parent);
 };

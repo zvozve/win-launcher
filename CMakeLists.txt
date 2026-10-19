@@ -61,6 +61,7 @@ add_executable(WinLauncher WIN32
     src/IconProvider.cpp
     src/Launcher.cpp
     src/LauncherWindow.cpp
+    src/SearchQuery.cpp
     src/ShortcutResolver.cpp
     src/UiFont.cpp
     src/WindowEffects.cpp
@@ -81,6 +82,7 @@ add_executable(WinLauncher WIN32
     inc/IconProvider.h
     inc/Launcher.h
     inc/LauncherWindow.h
+    inc/SearchQuery.h
     inc/ShortcutResolver.h
     inc/UiFont.h
     inc/WindowEffects.h
