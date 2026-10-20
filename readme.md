@@ -25,8 +25,12 @@ win-launcher/
 │   └── winlauncher.qrc         QML 打包进 exe，引擎用 qrc:/qml/Main.qml 加载
 ├── packaging/
 │   ├── deploy.bat              windeployqt + 补拷 Everything64.dll
-│   └── fetch-everything-sdk.bat  取回 Everything SDK 的 DLL
+│   ├── fetch-everything-sdk.bat  取回 Everything SDK 的 DLL
+│   ├── package.bat             单文件打包入口（编译 + 部署 + EVB）
+│   ├── package.py              打包主流程（参考 icloud-mon）
+│   └── gen_evb.py              生成 Enigma Virtual Box 工程
 ├── third_party/everything/     SDK DLL 落地处（DLL 不入库）
+├── dist/                       单文件产物 WinLauncher.exe（不入库）
 └── build/
     ├── Debug/WinLauncher.exe
     └── Release/WinLauncher.exe
@@ -52,15 +56,30 @@ build\Release\WinLauncher.exe
 `build.bat` 里包含 windeployqt，所以产物目录可以**直接双击运行**。
 只想重跑部署：`packaging\deploy.bat Release`。
 
+## 打包单文件
+
+```bat
+packaging\package.bat              :: 编译 + 部署 + 打进 dist\WinLauncher.exe
+packaging\package.bat --skip-build :: 跳过编译，只重新打包
+```
+
+产物 `dist\WinLauncher.exe`（约 42 MB，单文件，拷到任何 x64 Windows 双击即用）：
+Qt 运行时 + QML 模块 + `Everything64.dll` + VC 运行时 DLL 全部内嵌，
+配置与缓存仍写 `%LOCALAPPDATA%\WinLauncher`。`dist/` 已在 `.gitignore` 里。
+
+流程参考 `icloud-mon` 的打包脚本：`build.bat` → `deploy.bat`（windeployqt）→
+`gen_evb.py` 生成 Enigma Virtual Box 工程 → `enigmavbconsole.exe` 压成单文件。
+需要装 Enigma Virtual Box（默认 `C:\Program Files (x86)\Enigma Virtual Box`），
+装在别处用 `--evb <enigmavbconsole.exe>` 指定。
+
 ## 使用
 
 | 操作 | 说明 |
 |---|---|
 | `Ctrl+Alt+Space` | 唤起/收起面板（可在设置里改） |
-| 搜索栏最左 | 搜索类型：应用 / 文档 / 图片 / 视频 / 音乐 / 压缩包 / 全部 |
-| 搜索栏右侧 | 搜索源：**本地**（只过滤已扫到的条目）/ **全盘**（Everything 索引） |
+| 搜索栏 | 输入即查全盘（Everything）：`文件名 扩展名`、`文件名 文件类型`（如「报告 图片」）都支持 |
 | 面板「编辑」 | 图标增删（拖 `.lnk` / `.exe` / `.url` 进窗口即可添加） |
-| 面板「设置」 | 热键 / 开机自启 / 失焦收起 / 默认搜索源 / 每行图标数 / 扫描范围 |
+| 面板「设置」 | 热键 / 开机自启 / 失焦收起 / 每行图标数 / 扫描范围 |
 | Esc / 失焦 | 收起面板 |
 | 托盘 | 打开启动台 / 编辑 / 设置 / 开机自启 / 重新扫描 / 退出 |
 

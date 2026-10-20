@@ -1,0 +1,18 @@
+@echo off
+REM =====================================================================
+REM  package.bat  -  one-click single-file packaging (ASCII only!)
+REM
+REM  Wrapper around packaging/package.py:
+REM    build (MSVC+Ninja) -> windeployqt -> Enigma Virtual Box -> dist\WinLauncher.exe
+REM
+REM  Usage:
+REM    package.bat                  build + package
+REM    package.bat --skip-build     repack only (no rebuild)
+REM
+REM  NOTE: keep this file pure ASCII (cmd.exe reads .bat as GBK on zh-CN).
+REM =====================================================================
+setlocal
+set "PYEXE=python"
+where py >nul 2>nul && set "PYEXE=py"
+%PYEXE% "%~dp0package.py" %*
+endlocal
