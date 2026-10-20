@@ -11,3 +11,6 @@ third_party/everything/*.dll
 
 # 代码签名证书(私钥, 绝不入库)
 packaging/certs/
+
+# 临时提交信息文件
+.git-commit-msg.txt

@@ -115,6 +115,10 @@ private:
     HotkeyManager *m_hotkeys = nullptr;
     Controller *m_controller = nullptr;
     bool m_hideOnFocusOut = true;
+
+    // 收起原因。hideEvent 本身不带"为什么", 而"面板自己没了"的排查全靠它:
+    // 是失焦收的、按了 Esc、还是根本没人让它收(那就说明有别的路径在 hide)。
+    const char *m_hideReason = "unknown";
     // show() 的时刻：紧跟着到达的 WindowDeactivate 属于「焦点还没交接好」，要忽略
     QElapsedTimer m_lastShow;
     bool m_darkBackdrop = true;

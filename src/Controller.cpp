@@ -22,6 +22,12 @@
 #include <QVariantMap>
 #include <QWindow>
 
+#ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <psapi.h>
+
 #include <algorithm>
 #include <utility>
 
@@ -36,6 +42,7 @@
 #include "IconProvider.h"
 #include "Launcher.h"
 #include "LauncherWindow.h"
+#include "Log.h"
 #include "SearchQuery.h"
 
 namespace {
@@ -43,6 +50,24 @@ namespace {
 // 每片扫描占用主线程的时间预算：太小会频繁让出事件循环，
 // 太大会让面板卡顿。25ms 是「跟手」与「扫得快」的折中。
 constexpr int kScanSliceMs = 25;
+
+/**
+ * 内存快照（工作集 / 私有提交）。
+ * 扫描结束时打一次：图标全部生成并加载进场景之后的那一跳，是「两百多 MB」
+ * 里唯一靠少做点事就能降下来的部分（其余是 Qt 引擎与渲染后端的固定开销）。
+ */
+QString memStat()
+{
+    PROCESS_MEMORY_COUNTERS_EX pmc = {};
+    if (GetProcessMemoryInfo(GetCurrentProcess(),
+                             reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&pmc),
+                             sizeof(pmc))) {
+        return QStringLiteral("ws=%1MB private=%2MB")
+                .arg(pmc.WorkingSetSize / (1024 * 1024))
+                .arg(pmc.PrivateUsage / (1024 * 1024));
+    }
+    return QStringLiteral("n/a");
+}
 
 // 面板玻璃底图：半径/降采样/饱和度都是「逻辑像素 / 倍数」意义上的参数
 //   36px 的模糊半径是照 macOS vibrancy 的观感调的；降采样只影响速度不影响强度；
@@ -230,6 +255,20 @@ void Controller::togglePanel()
     m_window->toggleAtCursor();
 }
 
+void Controller::showPanel()
+{
+    if (!m_window)
+        return;
+    if (m_window->isVisible()) {
+        // 已经开着就别再 toggle（会关掉），只把它提到最前
+        m_window->raise();
+        wlTrace(QStringLiteral("showPanel: 面板已可见，提到最前"));
+        return;
+    }
+    wlTrace(QStringLiteral("showPanel: 面板隐藏中 -> 弹出"));
+    m_window->showAtCursor();
+}
+
 // ---- 扫描（GUI 线程分片）--------------------------------------------------
 
 void Controller::rescan()
@@ -280,7 +319,10 @@ void Controller::processScanChunk()
     int lastReported = -1;
     while (m_scanIndex < m_scanTasks.size() && slice.elapsed() < kScanSliceMs) {
         if (m_scanIndex < 3)
-            wlTrace(QStringLiteral("task #%1: %2").arg(m_scanIndex).arg(m_scanTasks.at(m_scanIndex).path));
+            // 每个任务一行, 348 个任务就是 348 行纯噪声 —— 只有 --trace
+            // 时才需要这种粒度(排查"为什么某个应用没被扫到")。
+            if (wlTraceEnabled())
+                wlTrace(QStringLiteral("task #%1: %2").arg(m_scanIndex).arg(m_scanTasks.at(m_scanIndex).path));
 
         ScannedApp app;
         if (AppScanner::runTask(m_scanTasks.at(m_scanIndex), &app))
@@ -386,6 +428,7 @@ void Controller::finishScan()
     m_scanIndex = 0;
 
     m_scanning = false;
+    wlTrace(QStringLiteral("finishScan: 内存 %1").arg(memStat()));
     emit scanningChanged();
     emit scanProgressChanged();
 
@@ -1236,6 +1279,10 @@ void Controller::openConfigFolder()
 
 void Controller::requestQuit()
 {
+    // 退出原因必须留痕。托盘「退出」、QML 的 Qt.quit()、以及以后任何新增
+    // 的退出入口都会走到这里; 抓一次栈, 万一不是用户点的, 栈会指出来。
+    wl::log::warn(QStringLiteral("requestQuit: 收到退出请求"));
+    wl::log::stackTrace(QStringLiteral("requestQuit 调用栈"), 2);
     QCoreApplication::quit();
 }
 

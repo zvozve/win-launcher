@@ -1,46 +1,37 @@
 #include "DebugTrace.h"
 
-#include <QCoreApplication>
-#include <QDir>
-#include <QFile>
+#include "Log.h"
+
+#include <QString>
 
 namespace {
-bool g_enabled = false;
-
-QString tracePath()
-{
-    // --trace 在 QApplication 构造之前就可能开始打点，此时 applicationDirPath()
-    // 还是空的（并会打印一条警告），退回当前工作目录。
-    const QString dir = QCoreApplication::instance() ? QCoreApplication::applicationDirPath()
-                                                     : QDir::currentPath();
-    return QDir(dir).filePath(QStringLiteral("winlauncher.trace"));
-}
+// --trace 的语义保留: 打开时把 debug 级别也往 stderr 打(开发期看控制台)。
+// 但无论开不开, 文件里都记 —— 见 Log.h 的说明。
+bool g_trace = false;
 } // namespace
 
 void wlTraceEnable(bool on)
 {
-    g_enabled = on;
+    g_trace = on;
 }
 
 bool wlTraceEnabled()
 {
-    return g_enabled;
+    return g_trace;
 }
 
 void wlTrace(const char *message)
 {
-    if (!g_enabled)
+    if (!message || !*message)
         return;
-
-    QFile f(tracePath());
-    if (!f.open(QIODevice::Append | QIODevice::Text))
+    if (!wl::log::active())
         return;
-    f.write(message);
-    f.write("\n");
-    f.close();
+    // 中文消息在源码里是 UTF-8 字面量; 走 toUtf8 路径保持与 QString 重载
+    // 一致, 避免 GBK/UTF-8 混写导致日志乱码。
+    wl::log::logAt(spdlog::level::info, std::string(message));
 }
 
 void wlTrace(const QString &message)
 {
-    wlTrace(message.toUtf8().constData());
+    wl::log::info(message);
 }

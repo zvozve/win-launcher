@@ -217,6 +217,14 @@ signals:
 public slots:
     void togglePanel();
 
+    /*
+     * 幂等显示（来自「再次启动同一 exe」的单实例回调）。
+     *
+     * 不能用 togglePanel：老实例收到通知时如果面板正好开着，toggle 会**关掉**
+     * 它 —— 用户双击图标的意图是"打开"，看到的却是"闪一下消失"。
+     */
+    void showPanel();
+
 private slots:
     void onHotkeyActivated();
     void processScanChunk();

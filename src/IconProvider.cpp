@@ -190,6 +190,11 @@ QImage normalizeIcon(const QImage &src)
  */
 QString IconProvider::cacheDir()
 {
+    // ★ 只探测一次并缓存结果。
+    //   原来每次取图标都完整走一遍候选探测: mkpath + 写探针 + 删探针,
+    //   213 个应用 = 213 轮磁盘往返, 日志被刷成几百行一样的 "cacheDir:"。
+    //   目录在进程生命周期内不会变, 静态初始化一次就够(线程安全由 C++11 保证)。
+    static const QString resolved = []() -> QString {
     QStringList candidates;
     const QString localData =
         QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
@@ -236,6 +241,8 @@ QString IconProvider::cacheDir()
 
     wlTrace(QStringLiteral("cacheDir: 所有候选都写不进去，图标缓存停用"));
     return QString();
+    }();
+    return resolved;
 }
 
 QString IconProvider::iconForPath(const QString &path)

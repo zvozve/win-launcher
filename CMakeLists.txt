@@ -63,6 +63,21 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS
 )
 
 # ======================================================================
+#  第三方库 (vendored, 不依赖 vcpkg)
+# ======================================================================
+#  spdlog: 日志。header-only 用, 只暴露 include 目录 —— 不编成静态库,
+#  省一次编译和一套 DLL 依赖。代价是头文件量很大, 见下面 MSVC 的 /bigobj。
+#  源码在 third_party/spdlog (随仓库走), 换机器/离线也能编。
+add_library(spdlog_header_only INTERFACE)
+target_include_directories(spdlog_header_only INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
+#  spdlog 1.14 默认就是 header-only(SPDLOG_COMPILED_LIB 未定义),
+#  不要再手动 -DSPDLOG_HEADER_ONLY: 头文件里已有 inline 定义, 命令行补
+#  一遍会变成重复定义。
+target_compile_definitions(spdlog_header_only INTERFACE
+    SPDLOG_NO_ATOMIC_LEVELS=0)
+
+# ======================================================================
 #  可执行目标
 # ======================================================================
 add_executable(WinLauncher WIN32
@@ -75,6 +90,7 @@ add_executable(WinLauncher WIN32
     src/BackdropProvider.cpp
     src/Config.cpp
     src/Controller.cpp
+    src/CrashHandler.cpp
     src/DebugTrace.cpp
     src/EverythingSearch.cpp
     src/GroupTile.cpp
@@ -82,6 +98,7 @@ add_executable(WinLauncher WIN32
     src/IconProvider.cpp
     src/Launcher.cpp
     src/LauncherWindow.cpp
+    src/Log.cpp
     src/SearchQuery.cpp
     src/ShortcutResolver.cpp
     src/UiFont.cpp
@@ -96,6 +113,7 @@ add_executable(WinLauncher WIN32
     inc/BackdropProvider.h
     inc/Config.h
     inc/Controller.h
+    inc/CrashHandler.h
     inc/DebugTrace.h
     inc/EverythingSearch.h
     inc/GroupTile.h
@@ -103,6 +121,7 @@ add_executable(WinLauncher WIN32
     inc/IconProvider.h
     inc/Launcher.h
     inc/LauncherWindow.h
+    inc/Log.h
     inc/SearchQuery.h
     inc/ShortcutResolver.h
     inc/UiFont.h
@@ -121,6 +140,7 @@ target_include_directories(WinLauncher PRIVATE
 )
 
 target_link_libraries(WinLauncher PRIVATE
+    spdlog_header_only
     Qt6::Core
     Qt6::Gui
     Qt6::Qml
@@ -134,7 +154,9 @@ if(WIN32)
     # user32  窗口样式 / 区域裁剪 / RegisterHotKey
     # shell32 SHGetFileInfo / SHGetImageList / SHAppBarMessage
     # ole32   CoInitializeEx / IShellLink / IPersistFile
-    target_link_libraries(WinLauncher PRIVATE dwmapi user32 shell32 ole32 oleaut32 uuid)
+    # dbghelp 崩溃栈符号化(SymFromAddr) 与 minidump(MiniDumpWriteDump)
+    # psapi   GetProcessMemoryInfo —— 日志里打各阶段内存增量
+    target_link_libraries(WinLauncher PRIVATE dwmapi user32 shell32 ole32 oleaut32 uuid dbghelp psapi)
 endif()
 
 target_compile_definitions(WinLauncher PRIVATE
@@ -151,6 +173,9 @@ if(MSVC)
         /W3        # 警告等级
         /utf-8     # 源码按 UTF-8 处理, 否则中文乱码
         /wd4996    # 屏蔽 std::iterator 的 deprecate 警告
+        # spdlog 的头文件里模板实例极多, 单个 obj 的段数会超过 65535,
+        # 不开这个直接 C1128(段数超限)编译失败。
+        /bigobj
     )
     target_link_options(WinLauncher PRIVATE /DEBUG)
 endif()

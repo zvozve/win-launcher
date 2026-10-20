@@ -34,17 +34,22 @@
 #include "Controller.h"
 #include "BackdropProvider.h"
 #include "Config.h"
+#include "CrashHandler.h"
 #include "DebugTrace.h"
 #include "EverythingSearch.h"
 #include "HotkeyManager.h"
 #include "LauncherWindow.h"
+#include "Log.h"
 #include "UiFont.h"
+
+#include <QCryptographicHash>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
 #include <objbase.h>
+#include <psapi.h>
 
 namespace ControllerPrivate {
 void setAutoStartLaunch(bool on);
@@ -52,7 +57,23 @@ void setAutoStartLaunch(bool on);
 
 namespace {
 
-const QString kPipeName = QStringLiteral("WinLauncher.SingleInstance");
+/**
+ * 单实例管道名。
+ *
+ * ★ 必须带 exe 路径指纹。原来是一根写死的 "WinLauncher.SingleInstance":
+ *   build\Release 和 dist 的副本共用同一个名字, 谁先在跑谁就占住管道,
+ *   后启动的那个连上去发个 "show" 就 return 0 退出了 —— 从用户视角就是
+ *   "双击了, 转几秒, 任务栏什么都没有", 而日志上什么都看不到(退出发生在
+ *   日志初始化之后、但没有记录)。
+ *   带上路径指纹后, 不同副本各跑各的, 同一个 exe 仍然保持单实例。
+ */
+QString pipeName()
+{
+    const QString path = QCoreApplication::applicationFilePath().toLower();
+    const QByteArray digest =
+            QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1).toHex().left(8);
+    return QStringLiteral("WinLauncher.SingleInstance.") + QString::fromLatin1(digest);
+}
 
 // 托盘图标：四个圆角方块（启动台网格）
 QIcon makeAppIcon()
@@ -143,10 +164,24 @@ void report(const QString &line)
     }
 }
 
-void raiseNotice(QSystemTrayIcon *tray, const QString &title, const QString &body)
+/**
+ * 当前进程内存(工作集 + 私有提交), 单位 MB。
+ *
+ * 用来回答「为什么占了两百多 MB」: 每个阶段打一次, 增量一目了然 ——
+ * Qt 引擎/渲染后端起来花多少、213 个应用的图标多少、玻璃底图多少。
+ * psapi!GetProcessMemoryInfo, 不额外依赖。
+ */
+QString memStat()
 {
-    if (tray)
-        tray->showMessage(title, body, QSystemTrayIcon::Information, 2500);
+    PROCESS_MEMORY_COUNTERS_EX pmc = {};
+    if (GetProcessMemoryInfo(GetCurrentProcess(),
+                             reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&pmc),
+                             sizeof(pmc))) {
+        return QStringLiteral("ws=%1MB private=%2MB")
+                .arg(pmc.WorkingSetSize / (1024 * 1024))
+                .arg(pmc.PrivateUsage / (1024 * 1024));
+    }
+    return QStringLiteral("n/a");
 }
 
 } // namespace
@@ -158,24 +193,55 @@ int main(int argc, char *argv[])
             wlTraceEnable(true);
     }
 
-    // QML 绑定错误 / Qt 警告在 GUI 版看不到控制台，统一落到 trace 文件
-    qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &, const QString &msg) {
-        const char *level = "info";
+    // 日志与崩溃现场必须最先就位: QApplication 构造期间的警告、以及任何
+    // 「启动几秒后自己没了」都要有据可查。init() 不依赖 QApplication
+    // (日志目录走 %LOCALAPPDATA%, 见 Log.h)。
+    wl::log::init();
+    wl::crash::install();
+
+    // QML 绑定错误 / Qt 警告在 GUI 版看不到控制台，统一落到日志文件。
+    // ★ handler 里绝不能再调 qDebug/qWarning —— 会递归进自己; 一律走
+    //   spdlog 的 logAt。带上 QML 文件行号, 否则 "xxx is not a function"
+    //   这种报错等于没说。
+    qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &ctx, const QString &msg) {
+        spdlog::level::level_enum lvl = spdlog::level::info;
         switch (type) {
-        case QtDebugMsg:    level = "debug"; break;
-        case QtInfoMsg:     level = "info"; break;
-        case QtWarningMsg:  level = "warn"; break;
-        case QtCriticalMsg: level = "crit"; break;
-        case QtFatalMsg:    level = "fatal"; break;
+        case QtDebugMsg:    lvl = spdlog::level::debug; break;
+        case QtInfoMsg:     lvl = spdlog::level::info; break;
+        case QtWarningMsg:  lvl = spdlog::level::warn; break;
+        case QtCriticalMsg: lvl = spdlog::level::err; break;
+        case QtFatalMsg:    lvl = spdlog::level::critical; break;
         }
-        wlTrace(QStringLiteral("[%1] %2").arg(QString::fromLatin1(level), msg));
-        if (type == QtFatalMsg)
-            abort();
+        QString where;
+        if (ctx.file)
+            where = QStringLiteral("  (%1:%2)").arg(QString::fromUtf8(ctx.file)).arg(ctx.line);
+        wl::log::logAt(lvl, wl::log::utf8(QStringLiteral("[qt] ") + msg + where));
+        if (type == QtFatalMsg) {
+            wl::log::critical(QStringLiteral("QtFatalMsg -> abort()"));
+            wl::log::shutdown();
+            std::abort();
+        }
     });
 
-    wlTrace("enter main()");
+    wlTrace(QStringLiteral("enter main()  argc=%1").arg(argc));
 
     QApplication app(argc, argv);
+
+    wlTrace(QStringLiteral("=== 启动 v%1  pid=%2 ===")
+                .arg(QStringLiteral(APP_VERSION))
+                .arg(QCoreApplication::applicationPid()));
+    wlTrace(QStringLiteral("exe=%1").arg(QCoreApplication::applicationFilePath()));
+    wlTrace(QStringLiteral("cwd=%1").arg(QDir::currentPath()));
+    wlTrace(QStringLiteral("log=%1").arg(wl::log::currentLogFile()));
+
+    // 退出必须留下原因。aboutToQuit 是唯一必经之路(requestQuit / QML
+    // Qt.quit / 事件循环被打断都走它), 但栈在此时已经被清理干净, 拿不到
+    // "谁调用的" —— 所以真正的来源标记放在 Controller::requestQuit() 里,
+    // 这里只确认"确实走到了退出"。
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, []() {
+        wl::log::info(QStringLiteral("=== aboutToQuit: 事件循环结束, 进程即将退出 ==="));
+    });
+
     // 统一全局字体：覆盖 Qt Quick Controls（Basic 样式）和裸 QML Text，避免出现
     // 「黑体 / 宋体」混用。用 Windows 系统 UI 字体，非中文系统上 Qt 自动回退到
     // 系统 UI 字体（Segoe UI 等），换个电脑 / 语言都通用。
@@ -211,19 +277,28 @@ int main(int argc, char *argv[])
 
     if (!diagnosticRun) {
         QLocalSocket probe;
-        probe.connectToServer(kPipeName);
+        probe.connectToServer(pipeName());
         if (probe.waitForConnected(300)) {
+            // 这条日志是"启动后立刻消失"的头号嫌疑: 已有实例在跑, 本次启动
+            // 只负责把它的面板叫出来, 自己立刻退出。以前这里完全静默,
+            // 从外部看就是"双击了、转一下就没了"。
+            wlTrace(QStringLiteral("single-instance: 已有实例在跑(%1), 通知它显示面板, 本次启动退出")
+                        .arg(pipeName()));
             probe.write("show");
             probe.flush();
             probe.waitForBytesWritten(300);
+            wl::log::shutdown();
             return 0;
         }
-        QLocalServer::removeServer(kPipeName);
+        QLocalServer::removeServer(pipeName());
     }
 
     QLocalServer server;
-    if (!diagnosticRun && !server.listen(kPipeName))
+    if (!diagnosticRun && !server.listen(pipeName())) {
         qWarning("单实例管道监听失败：%s", qPrintable(server.errorString()));
+    } else if (!diagnosticRun) {
+        wlTrace(QStringLiteral("single-instance: 本进程持有管道 %1").arg(pipeName()));
+    }
 
     // ---- 核心对象（先不扫描：扫描线程会碰 Shell/COM，必须等引擎与窗口就绪）----
     Config config;
@@ -488,7 +563,7 @@ int main(int argc, char *argv[])
     engine.load(QUrl(app.arguments().contains(QStringLiteral("--qml-test"))
                          ? QStringLiteral("qrc:/qml/LayoutTest.qml")
                          : QStringLiteral("qrc:/qml/Main.qml")));
-    wlTrace("qml loaded");
+    wlTrace(QStringLiteral("qml loaded  mem=%1").arg(memStat()));
     if (engine.rootObjects().isEmpty()) {
         qCritical("QML 加载失败，程序退出");
         return 1;
@@ -978,7 +1053,10 @@ int main(int argc, char *argv[])
         if (!client)
             return;
         QObject::connect(client, &QLocalSocket::disconnected, client, &QLocalSocket::deleteLater);
-        controller.togglePanel();
+        // 语义是 show 而不是 toggle: 用户又启动了一次 = 想看到面板。
+        // 用 toggle 的话面板正好开着时会被关掉, 表现为"双击一下反而没了"。
+        wlTrace(QStringLiteral("single-instance: 收到再次启动请求 -> 显示面板"));
+        controller.showPanel();
     });
 
     // ---- 启动形态 ---------------------------------------------------------
@@ -990,14 +1068,18 @@ int main(int argc, char *argv[])
         // 延时一点，等 QML 布局完成再弹出，避免首帧尺寸跳变
         QTimer::singleShot(120, &controller, [&controller] { controller.togglePanel(); });
     } else {
-        raiseNotice(&tray, QStringLiteral("WinLauncher"),
-                    QStringLiteral("已在托盘常驻，按 %1 打开启动台").arg(config.hotkey()));
+        // 自启动不弹托盘气泡。
+        // 原来这里 raiseNotice 一条"已在托盘常驻"的 Windows 通知, 每次开机
+        // 都弹一次 —— 用户视角就是"每次启动都有个弹窗"。托盘图标本身已经
+        // 说明程序在跑, 打开面板按热键就行。
+        wlTrace(QStringLiteral("autostart: 托盘常驻，不显示面板 (hotkey=%1)")
+                    .arg(config.hotkey()));
     }
 
     // 扫描延后到引擎/窗口就绪之后：扫描线程走 Shell + COM，与 QML 引擎初始化重叠
     // 会破坏进程状态（实测表现为引擎构造期段错误）。
     QTimer::singleShot(300, &controller, [&controller] { controller.rescan(); });
-    wlTrace("startup complete");
+    wlTrace(QStringLiteral("startup complete  mem=%1").arg(memStat()));
 
     const int code = app.exec();
     wlTrace("event loop exited");

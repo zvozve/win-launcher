@@ -163,6 +163,7 @@ void LauncherWindow::showAtCursor()
 void LauncherWindow::toggleAtCursor()
 {
     if (isVisible()) {
+        m_hideReason = "toggle";
         hidePanel();
         return;
     }
@@ -189,7 +190,11 @@ void LauncherWindow::showEvent(QShowEvent *event)
 void LauncherWindow::hideEvent(QHideEvent *event)
 {
     QQuickWindow::hideEvent(event);
-    wlTrace("hideEvent");
+    // 光看 hideEvent 不知道是谁让它收的 —— 原因在这里。
+    wlTrace(QStringLiteral("hideEvent: reason=%1  距上次显示=%2ms")
+                .arg(QString::fromLatin1(m_hideReason))
+                .arg(m_lastShow.isValid() ? static_cast<int>(m_lastShow.elapsed()) : -1));
+    m_hideReason = "unknown";
 }
 
 bool LauncherWindow::event(QEvent *event)
@@ -209,6 +214,7 @@ bool LauncherWindow::event(QEvent *event)
                 m_controller->closeGroup();
                 return true;
             }
+            m_hideReason = "esc";
             hidePanel();
             return true;
         }
@@ -234,8 +240,10 @@ bool LauncherWindow::event(QEvent *event)
          * QGuiApplication::applicationState() 仍然是 Qt::ApplicationActive。
          * 只有应用整体失活（点桌面、Alt-Tab 到别的应用）时才隐藏。
          */
-        if (QGuiApplication::applicationState() != Qt::ApplicationActive)
+        if (QGuiApplication::applicationState() != Qt::ApplicationActive) {
+            m_hideReason = "focus-out";
             hidePanel();
+        }
     }
     return QQuickWindow::event(event);
 }
