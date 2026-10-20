@@ -597,7 +597,7 @@ Item {
                                : qsTr("没有匹配「%1」").arg(Ctrl.query)))
                          : (Ctrl.diskSearch
                             ? qsTr("输入关键词后从全盘搜索")
-                            : qsTr("没有可显示的内容"))
+                            : qsTr("没有可显示的内容")))
                 visible: Ctrl.gridItems.length === 0 && text.length > 0
             }
 
