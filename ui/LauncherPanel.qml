@@ -480,6 +480,25 @@ Item {
                     event.accepted = true
                 }
 
+                /*
+                 * 鼠标接管键盘后重新用键盘：网格焦点一直没放（Tab 进来后），
+                 * 鼠标悬停只翻了 keyboardMode=false，于是方向键被 GridView 内部静默
+                 * 吃掉、高亮又不亮，表现为「键盘没反应」。这里在网格自己的按键里
+                 * 重新进入键盘模式：从鼠标悬停位置继承 currentIndex，再让 GridView
+                 * 按方向移一格（事件不吞，GridView 的默认移动照常发生）。
+                 * 已在键盘模式则只置位、不重置 currentIndex，保证连续导航不跳。
+                 */
+                Keys.onPressed: (event) => {
+                    if (event.key !== Qt.Key_Left && event.key !== Qt.Key_Right &&
+                        event.key !== Qt.Key_Up && event.key !== Qt.Key_Down)
+                        return
+                    if (!root.keyboardMode && root.hoverIndex >= 0) {
+                        const n = Ctrl.gridItems.length
+                        grid.currentIndex = Math.max(0, Math.min(n - 1, root.hoverIndex))
+                    }
+                    root.keyboardMode = true
+                }
+
                 cellWidth: width / root.columns
                 // 行高取容器高度的 1/4（向下取整）：静止时一屏正好 4 行，
                 // 滚动本身是自由的（不做吸附、不锁位置）。取整是为了让 4 行严格
