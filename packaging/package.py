@@ -271,6 +271,42 @@ def make_zip(exe: Path, ver: str) -> Path:
     return zpath
 
 
+# ── 目录版（免自解压）────────────────────────────────────────────────
+#  EVB 单文件每次运行都要把约 90MB 运行时解压到临时目录。未签名 + 自解压
+#  行为恰好是 SmartScreen 的高频拦截对象，而且每次重新打包哈希都变，
+#  "点过一次仍要运行"的记忆也就失效了 —— 表现就是"每次启动都有弹窗"。
+#  目录版是普通 PE：dll 就在 exe 旁边，没有解压动作、没有释放子进程，
+#  和任何普通程序一样，风险面小得多。
+def make_portable(exe: Path, ver: str) -> Path:
+    dist = ROOT / "dist" / f"{APP}-portable"
+    if dist.exists():
+        shutil.rmtree(dist, ignore_errors=True)
+    dist.parent.mkdir(parents=True, exist_ok=True)
+
+    ignore = shutil.ignore_patterns(
+        "*.pdb", "*.ilk", "*.exp", "*.lib", "*.obj", "*.trace", "winlauncher.trace",
+        "shot-*.png", "*.evb", "log", "cache", "CMakeFiles", "*.ninja*", ".cmake",
+        "winlauncher_autogen", "cmake_install.cmake", "CMakeCache.txt",
+    )
+    shutil.copytree(exe.parent, dist, ignore=ignore, dirs_exist_ok=True)
+
+    zpath = ROOT / "dist" / f"{APP}-v{ver}-win64-portable.zip"
+    if zpath.exists():
+        zpath.unlink()
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for f in sorted(dist.rglob("*")):
+            if f.is_file():
+                z.write(f, str(Path(dist.name) / f.relative_to(dist)))
+        z.writestr(f"{dist.name}/ReadMe.txt",
+                   ("WinLauncher 目录版（免安装）\r\n"
+                    "直接双击 WinLauncher.exe 运行即可，不需要解压到临时目录。\r\n"
+                    "整个文件夹可以随便挪动，配置写在 %LOCALAPPDATA%\\WinLauncher。\r\n")
+                   .encode("utf-8"))
+    mb = zpath.stat().st_size / 1024 / 1024
+    log(f"目录版 -> {zpath}  ({mb:.1f} MB)")
+    return dist
+
+
 # ── 打进单文件 exe ───────────────────────────────────────────────────
 def pack(exe: Path, evb_console: str) -> Path:
     dist = ROOT / "dist"
@@ -310,6 +346,8 @@ def main():
     ap.add_argument("--pfx", default="", help="签名证书 .pfx 路径")
     ap.add_argument("--pfx-pass", default="", help="证书密码(默认读环境变量/文件)")
     ap.add_argument("--no-zip", action="store_true", help="不生成分发压缩包")
+    ap.add_argument("--portable-only", action="store_true",
+                    help="只出目录版, 跳过 EVB 单文件(不装 Enigma Virtual Box 也能用)")
     args = ap.parse_args()
 
     ver = read_version(ROOT / "CMakeLists.txt")
@@ -328,6 +366,14 @@ def main():
     check_deployed(exe, args.qt)
     stage_crt(exe.parent)
 
+    # 目录版永远出（几秒的事），单文件版可以跳过。
+    make_portable(exe, ver)
+
+    if args.portable_only:
+        log(f"完成(仅目录版) -> {ROOT / 'dist' / (APP + '-portable')}")
+        log("双击该目录里的 WinLauncher.exe 即可，无需解压到临时目录。")
+        return
+
     out = pack(exe, args.evb)
 
     # 顺序不能反: EVB 会重写输出 exe, 签名必须在它之后; zip 又要装签好的 exe。
@@ -343,6 +389,7 @@ def main():
     if not args.sign:
         log("未签名: 经网盘/聊天软件传出去后首次运行会被 SmartScreen 拦, "
             "让对方先跑 zip 里的 Unblock-First.bat")
+        log("每次启动都弹窗的话改用目录版: dist\\WinLauncher-portable\\ (无自解压行为)")
 
 
 if __name__ == "__main__":
