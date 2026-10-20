@@ -20,6 +20,9 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <QFont>
+#include <QFontDatabase>
+
 #include <cstdio>
 #include <functional>
 #include <utility>
@@ -173,6 +176,10 @@ int main(int argc, char *argv[])
     wlTrace("enter main()");
 
     QApplication app(argc, argv);
+    // 统一全局字体：覆盖 Qt Quick Controls（Basic 样式）和裸 QML Text，避免出现
+    // 「黑体 / 宋体」混用。用 Windows 系统 UI 字体，非中文系统上 Qt 自动回退到
+    // 系统 UI 字体（Segoe UI 等），换个电脑 / 语言都通用。
+    app.setFont(QFont(QStringLiteral("Microsoft YaHei UI")));
     app.setApplicationName(QStringLiteral("WinLauncher"));
     app.setApplicationVersion(QStringLiteral(APP_VERSION));
     app.setApplicationDisplayName(QStringLiteral("WinLauncher"));

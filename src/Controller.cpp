@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QProcess>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -1096,7 +1097,13 @@ void Controller::openConfigFolder()
 {
     const QString dir = QFileInfo(layoutPath()).absolutePath();
     QDir().mkpath(dir);
-    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+    // 用资源管理器直接打开目录，比 QDesktopServices::openUrl 可靠：GUI 子系统程序里
+    // 后者偶尔静默失败，表现为「点了没反应」。
+    const QString native = QDir::toNativeSeparators(dir);
+    if (!QProcess::startDetached(QStringLiteral("explorer.exe"), QStringList() << native)) {
+        // 兜底：explorer 起不来再退回 openUrl
+        QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+    }
 }
 
 void Controller::requestQuit()

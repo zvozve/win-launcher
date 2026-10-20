@@ -132,6 +132,14 @@ QtObject {
     readonly property color knobOn:   dark ? "#000000" : "#FFFFFF"
     readonly property color knobOff:  "#FFFFFF"
 
+    // ================= 字体 =================
+    // 字体族单一来源：界面所有文本、Qt Quick Controls（Basic 样式）控件默认都继承
+    // 这个全局字体（main.cpp 里 QApplication::setFont 设置的）。
+    // 用 Windows 系统 UI 字体「Microsoft YaHei UI」：中文系统即微软雅黑，非中文系统
+    // 上该字体不存在、Qt 会自动回退到系统 UI 字体（Segoe UI 等），换个电脑 / 语言都通用，
+    // 不会出现「黑体 / 宋体」混用。需要显式指定字体时统一引用 Theme.fontFamily。
+    readonly property string fontFamily: "Microsoft YaHei UI"
+
     // ================= 字号 =================
     // 只有七档，**不要**再往界面里写裸数字。层级（以设置窗口为准）：
     //
