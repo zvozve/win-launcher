@@ -22,13 +22,16 @@ win-launcher/
 ├── src/                        全部实现（平铺，与 inc 同名）
 ├── ui/                         全部 QML（平铺，PascalCase）
 ├── resources/
-│   └── winlauncher.qrc         QML 打包进 exe，引擎用 qrc:/qml/Main.qml 加载
+│   ├── winlauncher.qrc         QML 打包进 exe，引擎用 qrc:/qml/Main.qml 加载
+│   ├── winlauncher.rc          Win32 资源：exe 文件图标（RT_ICON）
+│   └── winlauncher.ico         多尺寸图标（由 packaging/make_ico.py 生成）
 ├── packaging/
 │   ├── deploy.bat              windeployqt + 补拷 Everything64.dll
 │   ├── fetch-everything-sdk.bat  取回 Everything SDK 的 DLL
 │   ├── package.bat             单文件打包入口（编译 + 部署 + EVB）
 │   ├── package.py              打包主流程（参考 icloud-mon）
-│   └── gen_evb.py              生成 Enigma Virtual Box 工程
+│   ├── gen_evb.py              生成 Enigma Virtual Box 工程
+│   └── make_ico.py             生成 resources/winlauncher.ico（exe 图标）
 ├── third_party/everything/     SDK DLL 落地处（DLL 不入库）
 ├── dist/                       单文件产物 WinLauncher.exe（不入库）
 └── build/

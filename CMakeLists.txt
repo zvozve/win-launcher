@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 project(WinLauncher VERSION 0.2.0 LANGUAGES CXX)
 
+# exe 文件图标走 Win32 资源(.rc), 需要显式启用 RC 语言;
+# 不启用时 .rc 会被 CMake 当成"未知扩展名"静默忽略, exe 就没有图标。
+if(WIN32)
+    enable_language(RC)
+endif()
+
 # ======================================================================
 #  WinLauncher - 仿 macOS 26/27 的弹出式启动台
 #
@@ -88,6 +94,10 @@ add_executable(WinLauncher WIN32
     inc/WindowEffects.h
     # 资源: 由 AUTORCC 编译, 并按 qrc 里引用的文件建立依赖
     resources/winlauncher.qrc
+    # exe 文件图标: Win32 资源(RT_ICON), 和上面的 qrc 无关 —— QML 里的图标
+    # 影响不了 exe 自身在资源管理器/任务栏上的样子。必须列进 sources,
+    # 否则 rc.exe 根本不跑, exe 显示空白通用图标。
+    resources/winlauncher.rc
 )
 
 target_include_directories(WinLauncher PRIVATE
