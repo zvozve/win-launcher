@@ -899,16 +899,14 @@ Item {
                 color: Theme.textMid
                 font.pixelSize: Theme.fsSmall
                 /*
-                 * 左边那行已经在说「共 N 个应用」了，这里只在**筛选生效**时
-                 * 补一个「命中 / 总数」。没筛选就整个收起 —— 否则左右两处
-                 * 都在报同一个数字，看着像出了什么问题。
+                 * 这里**只报「命中 / 总数」**（筛选或搜索生效时），
+                 * 扫描进度不在这里报：左侧状态行（Ctrl.statusText）已经写了
+                 * 「正在扫描 x / y…」，两处同时报计数会让人以为出了两个进程。
                  */
                 visible: text.length > 0
-                text: (Ctrl.scanning && Ctrl.tileCount === 0)
-                      ? qsTr("扫描 %1 / %2").arg(Ctrl.scanProgress).arg(Ctrl.scanTotal)
-                      : (Ctrl.query.length > 0 || AppConfig.appCategory !== "all"
-                         ? qsTr("%1 / %2").arg(Ctrl.tileCount).arg(Ctrl.tileTotal)
-                         : "")
+                text: (Ctrl.query.length > 0 || AppConfig.appCategory !== "all")
+                      ? qsTr("%1 / %2").arg(Ctrl.tileCount).arg(Ctrl.tileTotal)
+                      : ""
             }
 
             Text {
