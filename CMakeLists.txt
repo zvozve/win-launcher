@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(WinLauncher VERSION 0.2.0 LANGUAGES CXX)
+project(WinLauncher VERSION 1.0.0 LANGUAGES CXX)
 
 # exe 文件图标 + 版本信息走 Win32 资源(.rc), 需要显式启用 RC 语言;
 # 不启用时 .rc 会被 CMake 当成"未知扩展名"静默忽略, exe 就没有图标。

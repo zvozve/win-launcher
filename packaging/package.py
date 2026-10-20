@@ -348,6 +348,8 @@ def main():
     ap.add_argument("--no-zip", action="store_true", help="不生成分发压缩包")
     ap.add_argument("--portable-only", action="store_true",
                     help="只出目录版, 跳过 EVB 单文件(不装 Enigma Virtual Box 也能用)")
+    ap.add_argument("--no-portable", action="store_true",
+                    help="跳过目录版(发布时只出单文件+zip; 也避开清理 1300 文件的删除确认)")
     args = ap.parse_args()
 
     ver = read_version(ROOT / "CMakeLists.txt")
@@ -366,8 +368,9 @@ def main():
     check_deployed(exe, args.qt)
     stage_crt(exe.parent)
 
-    # 目录版永远出（几秒的事），单文件版可以跳过。
-    make_portable(exe, ver)
+    # 目录版默认出（几秒的事），发布时用 --no-portable 跳过。
+    if not args.no_portable:
+        make_portable(exe, ver)
 
     if args.portable_only:
         log(f"完成(仅目录版) -> {ROOT / 'dist' / (APP + '-portable')}")

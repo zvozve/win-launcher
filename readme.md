@@ -2,7 +2,7 @@
 
 Windows 上仿 macOS 26/27 的**弹出式**启动台（Spotlight「应用程序」浮层那种，不是旧版全屏启动台）。
 
-按热键弹出一块圆角毛玻璃面板：最左是搜索类型，中间搜索栏，下面是图标网格；自动读取系统已安装软件，支持拖入 `.lnk` 添加，图标增删和设置各有一个独立窗口。
+按热键弹出一块圆角毛玻璃面板：顶部搜索栏，下面是图标网格；自动读取系统已安装软件，支持拖入 `.lnk` 添加，图标增删和设置各有一个独立窗口。搜索栏输入即查全盘（Everything），结果按「名称 / 路径 / 大小 / 类型」四列详情展示。
 
 技术栈：**Qt 6.8.3 (msvc2022_64) + MSVC 2022 Build Tools + Ninja**
 
@@ -129,15 +129,28 @@ packaging\package.bat --sign
 - 手动添加的条目 `%LOCALAPPDATA%\WinLauncher\layout.json`
 - 图标缓存 `%LOCALAPPDATA%\WinLauncher\cache\icons\*.png`
 
+**开机自启默认关闭**，程序不会自己往注册表写启动项。需要时先在设置（或托盘菜单）里打开，
+写入的是**当前正在运行的那个 exe** 的绝对路径 —— 所以先把 exe 放到最终位置再开，
+否则挪动目录后自启会失效（开关会自己显示为关闭，重新开一次即可）。
+
 ## 排错
 
 ```bat
-WinLauncher.exe --trace                     :: 打点 + Qt/QML 警告写入 <exe目录>\winlauncher.trace
+WinLauncher.exe --trace                     :: 额外记录扫描明细（默认已是 info 级）
 WinLauncher.exe --test-everything chrome    :: 直查 Everything 索引，结果写 winlauncher.diagnostics.txt
 ```
 
+**日志常开**，不需要加参数：
+
+- 运行日志 `%LOCALAPPDATA%\WinLauncher\log\winlauncher_YYYY-MM-DD`（按天切分，保留 30 天）
+- 崩溃现场 `%LOCALAPPDATA%\WinLauncher\log\crash-<时间>-<pid>.txt` + `.dmp`
+  （异常码、故障地址、模块偏移、读写类型、调用栈）
+
+"进程莫名其妙没了"先看这两个文件，里面有每次显隐、扫描、单实例握手和内存快照。
+
 - 双击报「缺少 Qt6Cored.dll」= 没跑 windeployqt，执行 `packaging\deploy.bat Release`。
-- 托盘已常驻时再启动 exe 会静默退出（单实例设计，会把已有实例的面板叫出来）。
+- 再次启动 exe 而托盘已有实例：新进程只把已有实例的面板叫出来，然后自己退出（单实例）。
+  日志里会写明叫醒的是哪个 exe（`已有实例[ok pid=.. exe=..]`）。
 - 「全盘」搜不到东西：确认 Everything 在运行，且 `Everything64.dll` 在 exe 旁
   （`packaging\fetch-everything-sdk.bat` 取回，`build.bat` 会自动拷）。
 
