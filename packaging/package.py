@@ -10,8 +10,12 @@
 #    python packaging/package.py                # 编译 + 打包
 #    python packaging/package.py --skip-build   # 只重新打包(用现有 build/Release)
 #    python packaging/package.py --qt <Qt目录> --evb <enigmavbconsole.exe>
+#    python packaging/package.py --sign         # 打包后签名(需 packaging/certs/*.pfx)
 #
-#  产物: dist/WinLauncher.exe (单文件, 双击即用; dist/ 已在 .gitignore)
+#  产物:
+#    dist/WinLauncher.exe                      单文件, 双击即用
+#    dist/WinLauncher-v<ver>-win64.zip         分发用压缩包(内含解除锁定脚本)
+#   dist/ 已在 .gitignore
 # ======================================================================
 import argparse
 import os
@@ -20,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 # ── 默认可执行/工具路径(可用参数或环境变量覆盖) ──────────────────────
@@ -151,6 +156,121 @@ def stage_crt(exe_dir: Path) -> None:
         + (f", 缺: {missing}" if missing else ""))
 
 
+# ── 代码签名(可选) ───────────────────────────────────────────────────
+# "Unknown publisher" 只有一个来源: exe 没有 Authenticode 签名。这个字段
+# 只认签名者的证书, 和 VERSIONINFO(产品名/版本/版权)完全无关 —— 补版本
+# 信息不会让发布者变成已知。
+#
+# 能消掉它的只有公共 CA 签发的代码签名证书(OV/EV, 按年付费)。
+# **自签名证书无效**: 把自建 CA 装进"受信任的根证书颁发机构"虽然能让链
+# 验证通过, 但那等于给整台机器开了一个任意签发口子, 为了一个提示降低
+# 系统安全面, 不值得。
+#
+# 证书不入库(.gitignore 已屏蔽 packaging/certs/)。买了证书后:
+#     WINLAUNCHER_PFX_PASS=密码  python packaging/package.py --sign
+def find_signtool():
+    base = Path(os.environ.get("ProgramFiles(x86)",
+                               r"C:/Program Files (x86)")) / "Windows Kits" / "10" / "bin"
+    if not base.is_dir():
+        return None
+    cands = sorted(base.glob("*/x64/signtool.exe"), reverse=True)
+    return str(cands[0]) if cands else None
+
+
+def sign_exe(exe: Path, pfx: Path, password: str) -> None:
+    tool = find_signtool()
+    if not tool:
+        fail("找不到 signtool.exe(需要 Windows 10 SDK)")
+    base = [tool, "sign", "/fd", "SHA256", "/f", str(pfx), "/p", password]
+    log(f"签名 {exe.name} (证书 {pfx.name}) ...")
+    # 时间戳让签名在证书过期后仍然有效; 服务器偶发拒连时退化为无时间戳
+    r = run(base + ["/tr", "http://timestamp.digicert.com", "/td", "SHA256", str(exe)])
+    if r.returncode != 0:
+        log("时间戳服务器不可用, 改为不带时间戳签名")
+        r = run(base + [str(exe)])
+    if r.returncode != 0:
+        fail("签名失败(检查 pfx 是否过期 / 密码是否正确)")
+
+
+def resolve_cert(args):
+    """--sign 时定位 pfx 与密码。"""
+    certs = ROOT / "packaging" / "certs"
+    pfx = Path(args.pfx) if args.pfx else next(iter(certs.glob("*.pfx")), None)
+    if not pfx or not Path(pfx).exists():
+        fail(f"--sign 但找不到证书: 把 .pfx 放到 {certs} 或用 --pfx 指定")
+    pwd = args.pfx_pass or os.environ.get("WINLAUNCHER_PFX_PASS", "")
+    if not pwd:
+        f = certs / "password.txt"
+        if f.exists():
+            pwd = f.read_text(encoding="utf-8").strip()
+    if not pwd:
+        fail("缺少证书密码: 设环境变量 WINLAUNCHER_PFX_PASS, "
+             f"或写 {certs / 'password.txt'}, 或用 --pfx-pass")
+    return Path(pfx), pwd
+
+
+# ── 分发压缩包 ───────────────────────────────────────────────────────
+# 单文件 exe 从网盘/聊天软件/浏览器传到别人机器上会带 Mark-of-the-Web,
+# 于是双击就被 SmartScreen 拦("Windows protected your PC")。签名能减轻
+# 但不能免除(未累积信誉的新文件照样提示), 真正零门槛的办法是让接收方
+# 先清掉这个标记 —— zip 里放个一键脚本, 比让用户自己翻属性页靠谱。
+UNBLOCK_BAT = """@echo off
+REM ------------------------------------------------------------------
+REM  Run this ONCE after unpacking.
+REM  It clears the "downloaded from the Internet" mark (Mark-of-the-Web)
+REM  on every file here, which is what makes SmartScreen block the exe
+REM  with "Windows protected your PC / Unknown publisher".
+REM  After this, WinLauncher.exe starts without any prompt.
+REM ------------------------------------------------------------------
+setlocal
+echo Clearing Mark-of-the-Web in "%~dp0" ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "Get-ChildItem -LiteralPath '%~dp0' -File | Unblock-File; Write-Host 'OK'"
+echo.
+echo Done. Double-click WinLauncher.exe to start.
+pause
+"""
+
+README_TXT = """WinLauncher v{ver}
+================================================================
+
+【第一次运行】
+  1. 先双击 Unblock-First.bat
+     （它会清掉文件的"来自 Internet"标记）
+  2. 再双击 WinLauncher.exe
+
+  跳过第 1 步的话，Windows 可能弹出
+  "Windows Defender SmartScreen 已阻止无法识别的应用"。
+  那是 SmartScreen 对"从网络下载的、没有数字签名的程序"的默认拦截，
+  不是病毒告警。此时点「更多信息」→「仍要运行」也能启动，
+  但每次都弹，先跑一次 Unblock-First.bat 就一劳永逸。
+
+【为什么没有数字签名】
+  代码签名需要向公共 CA 购买证书（OV/EV，按年计费）。本项目为个人
+  自用工具，未购买证书，所以发布者显示为 Unknown。
+  彻底消除提示的唯一办法是购买证书后用 signtool 签名，见 readme。
+
+【数据位置】
+  配置与缓存写在 %LOCALAPPDATA%\\WinLauncher\\
+  本程序为绿色版，删掉 exe 即可卸载（配置目录可手动清理）。
+"""
+
+
+def make_zip(exe: Path, ver: str) -> Path:
+    zpath = exe.parent / f"{APP}-v{ver}-win64.zip"
+    if zpath.exists():
+        zpath.unlink()
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        # exe 用 STORED? 不必 —— 单文件 exe 内部已经是压缩过的 EVB 载荷,
+        # 再 deflate 一次收益很小但也不亏, 统一 DEFLATED 即可。
+        z.write(exe, exe.name)
+        z.writestr("Unblock-First.bat", UNBLOCK_BAT.replace("\n", "\r\n"))
+        z.writestr("ReadMe.txt", README_TXT.format(ver=ver).replace("\n", "\r\n"))
+    mb = zpath.stat().st_size / 1024 / 1024
+    log(f"分发包 -> {zpath}  ({mb:.1f} MB)")
+    return zpath
+
+
 # ── 打进单文件 exe ───────────────────────────────────────────────────
 def pack(exe: Path, evb_console: str) -> Path:
     dist = ROOT / "dist"
@@ -185,6 +305,11 @@ def main():
     ap.add_argument("--evb", default=DEF_EVB, help="enigmavbconsole.exe 路径")
     ap.add_argument("--config", default="Release")
     ap.add_argument("--skip-build", action="store_true", help="跳过编译, 只重新打包")
+    ap.add_argument("--sign", action="store_true",
+                    help="打包后用 signtool 签名(需 packaging/certs/*.pfx)")
+    ap.add_argument("--pfx", default="", help="签名证书 .pfx 路径")
+    ap.add_argument("--pfx-pass", default="", help="证书密码(默认读环境变量/文件)")
+    ap.add_argument("--no-zip", action="store_true", help="不生成分发压缩包")
     args = ap.parse_args()
 
     ver = read_version(ROOT / "CMakeLists.txt")
@@ -204,9 +329,20 @@ def main():
     stage_crt(exe.parent)
 
     out = pack(exe, args.evb)
+
+    # 顺序不能反: EVB 会重写输出 exe, 签名必须在它之后; zip 又要装签好的 exe。
+    if args.sign:
+        pfx, pwd = resolve_cert(args)
+        sign_exe(out, pfx, pwd)
+    if not args.no_zip:
+        make_zip(out, ver)
+
     mb = out.stat().st_size / 1024 / 1024
     log(f"完成 -> {out}  ({mb:.1f} MB)  v{ver}")
     log("单文件可直接拷走双击运行(配置仍写在 %LOCALAPPDATA%\\WinLauncher)")
+    if not args.sign:
+        log("未签名: 经网盘/聊天软件传出去后首次运行会被 SmartScreen 拦, "
+            "让对方先跑 zip 里的 Unblock-First.bat")
 
 
 if __name__ == "__main__":

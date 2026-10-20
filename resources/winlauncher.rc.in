@@ -1,0 +1,62 @@
+// ======================================================================
+//  winlauncher.rc.in  -  exe PE resources (icon + version info).
+//  Processed by CMake configure_file into build/<Config>/winlauncher.rc
+//
+//  WHY THIS EXISTS:
+//  An exe with NO VERSIONINFO shows up as "Unknown publisher" in
+//  SmartScreen and has an empty Details tab in Explorer. Version fields
+//  are what reputation systems (and humans) use to identify a binary.
+//  iCloudMon has shipped with them since day one - WinLauncher did not,
+//  which is why only WinLauncher got flagged.
+//
+//  The icon absolute path and the version numbers below are substituted by
+//  CMake (VER_MAJOR / VER_MINOR / VER_PATCH come from project(VERSION)).
+//  The icon path MUST be absolute: rc.exe does not resolve ICON relative to
+//  the .rc file, and an absolute build-machine path must not live in the repo.
+//
+//  NOTE: keep this file pure ASCII. rc.exe parses it with the system code
+//  page; non-ASCII bytes inside the resource block can break parsing.
+// ======================================================================
+
+IDI_APPICON ICON "@WINLAUNCHER_ICON@"
+
+1 VERSIONINFO
+FILEVERSION @VER_MAJOR@,@VER_MINOR@,@VER_PATCH@,0
+PRODUCTVERSION @VER_MAJOR@,@VER_MINOR@,@VER_PATCH@,0
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "CompanyName", "zvozve"
+            VALUE "FileDescription", "WinLauncher - macOS style app launcher"
+            VALUE "FileVersion", "@VER_MAJOR@.@VER_MINOR@.@VER_PATCH@"
+            VALUE "InternalName", "WinLauncher"
+            VALUE "LegalCopyright", "Copyright (C) 2026 zvozve"
+            VALUE "OriginalFilename", "WinLauncher.exe"
+            VALUE "ProductName", "WinLauncher"
+            VALUE "ProductVersion", "@VER_MAJOR@.@VER_MINOR@.@VER_PATCH@"
+        END
+        // English fallback for non-Chinese systems
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "zvozve"
+            VALUE "FileDescription", "WinLauncher - macOS style app launcher"
+            VALUE "FileVersion", "@VER_MAJOR@.@VER_MINOR@.@VER_PATCH@"
+            VALUE "InternalName", "WinLauncher"
+            VALUE "LegalCopyright", "Copyright (C) 2026 zvozve"
+            VALUE "OriginalFilename", "WinLauncher.exe"
+            VALUE "ProductName", "WinLauncher"
+            VALUE "ProductVersion", "@VER_MAJOR@.@VER_MINOR@.@VER_PATCH@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END

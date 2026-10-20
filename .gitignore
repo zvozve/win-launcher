@@ -8,3 +8,6 @@ winlauncher.*.txt
 
 # Everything SDK 二进制：由 packaging/fetch-everything-sdk.bat 拉取，不入库
 third_party/everything/*.dll
+
+# 代码签名证书(私钥, 绝不入库)
+packaging/certs/

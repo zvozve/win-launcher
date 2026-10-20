@@ -1,10 +1,25 @@
 cmake_minimum_required(VERSION 3.16)
 project(WinLauncher VERSION 0.2.0 LANGUAGES CXX)
 
-# exe 文件图标走 Win32 资源(.rc), 需要显式启用 RC 语言;
+# exe 文件图标 + 版本信息走 Win32 资源(.rc), 需要显式启用 RC 语言;
 # 不启用时 .rc 会被 CMake 当成"未知扩展名"静默忽略, exe 就没有图标。
+#
+# .rc 由 resources/winlauncher.rc.in 生成, 而不是直接用源文件 —— 这样
+# VERSIONINFO 里的版本号能跟着 project(VERSION) 走(单一真相源), 不必在
+# 两个地方手工同步。
 if(WIN32)
     enable_language(RC)
+    # rc.exe 的 ICON 语句要真实存在的路径; 生成物在 build 目录里,
+    # 所以图标得给绝对路径。
+    set(WINLAUNCHER_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/winlauncher.ico")
+    # VERSIONINFO 要逐段数字, 从 project(VERSION) 拆出来
+    set(VER_MAJOR ${PROJECT_VERSION_MAJOR})
+    set(VER_MINOR ${PROJECT_VERSION_MINOR})
+    set(VER_PATCH ${PROJECT_VERSION_PATCH})
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/winlauncher.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/winlauncher.rc"
+        @ONLY)
 endif()
 
 # ======================================================================
@@ -94,10 +109,11 @@ add_executable(WinLauncher WIN32
     inc/WindowEffects.h
     # 资源: 由 AUTORCC 编译, 并按 qrc 里引用的文件建立依赖
     resources/winlauncher.qrc
-    # exe 文件图标: Win32 资源(RT_ICON), 和上面的 qrc 无关 —— QML 里的图标
-    # 影响不了 exe 自身在资源管理器/任务栏上的样子。必须列进 sources,
-    # 否则 rc.exe 根本不跑, exe 显示空白通用图标。
-    resources/winlauncher.rc
+    # exe 文件图标 + 属性页版本信息: Win32 资源(RT_ICON + VERSIONINFO), 和上面
+    # 的 qrc 无关 —— QML 里的图标影响不了 exe 自身在资源管理器/任务栏上的样子。
+    # 必须列进 sources, 否则 rc.exe 根本不跑, exe 显示空白通用图标、属性页全空。
+    # 用 build 目录里的生成版(版本号由 project(VERSION) 注入)。
+    ${CMAKE_CURRENT_BINARY_DIR}/winlauncher.rc
 )
 
 target_include_directories(WinLauncher PRIVATE

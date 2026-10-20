@@ -1,8 +1,0 @@
-// Win32 资源：exe 文件图标（资源管理器 / 任务栏 / 属性页）
-// 图案由 packaging/make_ico.py 生成，和 main.cpp 的 makeAppIcon() 一致
-// （2x2 圆角方块、#007AFF，下排半透明）。改颜色请改脚本后重新生成。
-//
-// 注意：这个 .rc 必须列在 target sources 里，否则 MSVC 不会编它，
-// exe 就退化成空白通用图标 —— 现象就是"exe 没图标"。
-
-IDI_APPICON ICON "winlauncher.ico"

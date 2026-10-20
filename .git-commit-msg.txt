@@ -1,0 +1,28 @@
+exe 补 VERSIONINFO 版本资源，打包产物加解锁定脚本
+
+问题：dist 出来的 exe 被 Windows 弹 "Unknown publisher"，
+属性页的文件版本/产品名/公司/版权全是空的。
+
+根因两件事分开看：
+1. Publisher 字段只认 Authenticode 签名，没买公共 CA 证书就永远是
+   Unknown —— 补版本信息改不了这个，自签名证书也不该用（往本机根存
+   储塞自建 CA 只为消一个提示，安全上是净亏损）。
+2. 但 VERSIONINFO 确实是空的，这是实打实的缺失：属性页、资源管理器
+   的工具提示、任务栏分组都读它。icloud-mon 从一开始就有，所以只有
+   WinLauncher 看起来像个三无程序。
+
+改动：
+- resources/winlauncher.rc → winlauncher.rc.in，由 CMake configure_file
+  注入 project(VERSION)，版本号仍然只有一处真相源；图标路径给绝对路
+  径（rc.exe 不按 .rc 所在目录解析相对路径），生成物落在 build 目录。
+  纯 ASCII，两个语言块（0804 中文 / 0409 英文兜底）。
+- package.py 生成 dist/WinLauncher-v<ver>-win64.zip，内含
+  Unblock-First.bat：清 Mark-of-the-Web，避免 exe 经网盘/聊天软件传
+  出去后每个接收方都要点一次「仍要运行」。
+- package.py --sign：买了公共 CA 证书后可直接签名（signtool + SHA256
+  + 时间戳，失败退化为无时间戳）。
+- .gitignore 屏蔽 packaging/certs/。
+
+验证：build/Release 与 EVB 产物的 VersionInfo 均为
+0.2.0 / WinLauncher / zvozve，图标 ExtractIconExW 计数 1，
+zip 内三个文件齐全。
