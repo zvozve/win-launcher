@@ -210,7 +210,7 @@ Window {
                     SettingRow {
                         label: qsTr("全盘搜索")
                         hint: Ctrl.everything.available
-                              ? qsTr("已接入 Everything（%1）。搜索「文档/图片/视频/音乐/压缩包」时自动查全盘，词里写扩展名（如「报告 xlsx」）也会查全盘。")
+                              ? qsTr("已接入 Everything（%1）。搜索「文档/图片/视频/音乐/压缩包」时自动查全盘，词里写扩展名（如「报告 pdf」）也会查全盘。")
                                     .arg(Ctrl.everything.loadedPath)
                               : qsTr("未检测到 Everything64.dll，文件搜索只能靠本地过滤。运行 scripts\\fetch-everything-sdk.bat 可取回。")
                     }

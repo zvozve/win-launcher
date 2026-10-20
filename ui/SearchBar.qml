@@ -128,7 +128,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                placeholderText: qsTr("搜索应用，或输入「文件名 xlsx」搜文件")
+                placeholderText: qsTr("搜索应用，或输入「文件名 pdf」搜文件")
                 placeholderTextColor: Theme.textLo
                 color: Theme.textHi
                 font.pixelSize: Theme.fsTitle
