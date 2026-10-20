@@ -266,9 +266,16 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
+        /*
+         * 边距和面板圆角（Theme.rPanel = 26）是联动的：搜索框圆角 rInput = 9，
+         * 左右/顶部都留 18 → 内层圆角圆心到边缘 18 + 9 = 27，与面板圆角圆心
+         * （到边缘 26）基本重合，视觉上「圆角同心」。顶部之前是 14，圆心只到
+         * 23，搜索栏整个偏高 4px、贴着圆角走线上，所以单独调成和左右一致。
+         * 改 rPanel 或 rInput 时这里要一起算：margin = rPanel - rInput。
+         */
         anchors.leftMargin: 18
         anchors.rightMargin: 18
-        anchors.topMargin: 14
+        anchors.topMargin: 18
         anchors.bottomMargin: 10
         spacing: 10
 
