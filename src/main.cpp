@@ -42,8 +42,6 @@
 #include "Log.h"
 #include "UiFont.h"
 
-#include <QCryptographicHash>
-
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
 #endif
@@ -58,22 +56,19 @@ void setAutoStartLaunch(bool on);
 namespace {
 
 /**
- * 单实例管道名。
+ * 单实例管道名 —— 全局唯一, 与 exe 路径无关。
  *
- * ★ 必须带 exe 路径指纹。原来是一根写死的 "WinLauncher.SingleInstance":
- *   build\Release 和 dist 的副本共用同一个名字, 谁先在跑谁就占住管道,
- *   后启动的那个连上去发个 "show" 就 return 0 退出了 —— 从用户视角就是
- *   "双击了, 转几秒, 任务栏什么都没有", 而日志上什么都看不到(退出发生在
- *   日志初始化之后、但没有记录)。
- *   带上路径指纹后, 不同副本各跑各的, 同一个 exe 仍然保持单实例。
+ * ★ 这里刻意 **不** 带 exe 路径指纹。带指纹的后果是 build\Release 版和
+ *   dist 版各起一个进程: 两个托盘图标、两份各 ~237MB 的常驻内存 ——
+ *   那不是单实例, 是多实例。
+ *   真正的单例语义: 不管双击的是哪一个副本, 全局只有一份进程在跑;
+ *   后启动的那个只负责把已有实例的面板叫出来, 然后退出。
+ *
+ *   (之前"双击一下闪一下没了"的病因不是管道名共用, 而是回调用了 toggle:
+ *    已有实例收到请求时面板正好开着, 就被关掉了。语义改成幂等的 show 后,
+ *    共用管道名反而是正确行为。)
  */
-QString pipeName()
-{
-    const QString path = QCoreApplication::applicationFilePath().toLower();
-    const QByteArray digest =
-            QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1).toHex().left(8);
-    return QStringLiteral("WinLauncher.SingleInstance.") + QString::fromLatin1(digest);
-}
+const QString kPipeName = QStringLiteral("WinLauncher.SingleInstance");
 
 // 托盘图标：四个圆角方块（启动台网格）
 QIcon makeAppIcon()
@@ -277,27 +272,56 @@ int main(int argc, char *argv[])
 
     if (!diagnosticRun) {
         QLocalSocket probe;
-        probe.connectToServer(pipeName());
-        if (probe.waitForConnected(300)) {
+        probe.connectToServer(kPipeName);
+        // 800ms: EVB 单文件版解压完进程才真正开始跑, 握手时间要给足。
+        // 探不通不代表没人在跑(对方可能正在 listen), 所以下面 listen 失败
+        // 时还会回探一次, 避免两个实例同时把自己当成"第一个"。
+        if (probe.waitForConnected(800)) {
             // 这条日志是"启动后立刻消失"的头号嫌疑: 已有实例在跑, 本次启动
             // 只负责把它的面板叫出来, 自己立刻退出。以前这里完全静默,
             // 从外部看就是"双击了、转一下就没了"。
-            wlTrace(QStringLiteral("single-instance: 已有实例在跑(%1), 通知它显示面板, 本次启动退出")
-                        .arg(pipeName()));
             probe.write("show");
             probe.flush();
             probe.waitForBytesWritten(300);
+
+            // 服务端回 "ok <pid> <exe 路径>"。必须记: 自启动注册的是 build 版、
+            // 用户手动双击的可能是 dist 版, 现在两者合并成一个进程了,
+            // 不记这条日志就分不清"眼前的界面到底是哪一份 exe 在渲染"。
+            QString who;
+            if (probe.waitForReadyRead(500))
+                who = QString::fromUtf8(probe.readAll()).trimmed();
+            wl::log::info(QStringLiteral("single-instance: 已有实例[%1] -> 显示请求已送达, 本次启动退出")
+                              .arg(who.isEmpty() ? QStringLiteral("未回执") : who));
+            probe.disconnectFromServer();
             wl::log::shutdown();
             return 0;
         }
-        QLocalServer::removeServer(pipeName());
     }
 
     QLocalServer server;
-    if (!diagnosticRun && !server.listen(pipeName())) {
-        qWarning("单实例管道监听失败：%s", qPrintable(server.errorString()));
-    } else if (!diagnosticRun) {
-        wlTrace(QStringLiteral("single-instance: 本进程持有管道 %1").arg(pipeName()));
+    if (!diagnosticRun) {
+        if (!server.listen(kPipeName)) {
+            // 竞态: 探测那一刻对方还没 listen 完, 到这里管道已经被占。
+            // 此时必须把自己也退化成"叫醒对方", 否则就真的跑出两个实例。
+            QLocalSocket retry;
+            retry.connectToServer(kPipeName);
+            if (retry.waitForConnected(800)) {
+                retry.write("show");
+                retry.flush();
+                retry.waitForBytesWritten(300);
+                wl::log::info(QStringLiteral("single-instance: 管道被占用(%1), 显示请求已转交, 本次启动退出")
+                                  .arg(server.errorString()));
+                retry.disconnectFromServer();
+                wl::log::shutdown();
+                return 0;
+            }
+            // 既不成功也没人在听: 继续单跑(宁可多一个实例, 也不能让用户
+            // 双击之后什么都没有)。
+            wl::log::error(QStringLiteral("single-instance: listen 失败且无人在听(%1), 继续以非单例模式运行")
+                               .arg(server.errorString()));
+        } else {
+            wl::log::info(QStringLiteral("single-instance: 本进程持有管道 %1").arg(kPipeName));
+        }
     }
 
     // ---- 核心对象（先不扫描：扫描线程会碰 Shell/COM，必须等引擎与窗口就绪）----
@@ -1049,14 +1073,22 @@ int main(int argc, char *argv[])
 
     // ---- 单实例回调 -------------------------------------------------------
     QObject::connect(&server, &QLocalServer::newConnection, &controller, [&server, &controller] {
-        QLocalSocket *client = server.nextPendingConnection();
-        if (!client)
-            return;
-        QObject::connect(client, &QLocalSocket::disconnected, client, &QLocalSocket::deleteLater);
-        // 语义是 show 而不是 toggle: 用户又启动了一次 = 想看到面板。
-        // 用 toggle 的话面板正好开着时会被关掉, 表现为"双击一下反而没了"。
-        wlTrace(QStringLiteral("single-instance: 收到再次启动请求 -> 显示面板"));
-        controller.showPanel();
+        while (QLocalSocket *client = server.nextPendingConnection()) {
+            QObject::connect(client, &QLocalSocket::disconnected, client, &QLocalSocket::deleteLater);
+
+            // 回执: 告诉新进程它叫醒的是谁。管道名现在是全局统一的,
+            // 界面可能来自 build 版也可能来自 dist 版, 只靠这份回执能查出来。
+            client->write(QStringLiteral("ok pid=%1 exe=%2\n")
+                              .arg(QCoreApplication::applicationPid())
+                              .arg(QCoreApplication::applicationFilePath())
+                              .toUtf8());
+            client->flush();
+
+            // 语义是 show 而不是 toggle: 用户又启动了一次 = 想看到面板。
+            // 用 toggle 的话面板正好开着时会被关掉, 表现为"双击一下反而没了"。
+            wl::log::info(QStringLiteral("single-instance: 收到再次启动请求 -> 显示面板"));
+            controller.showPanel();
+        }
     });
 
     // ---- 启动形态 ---------------------------------------------------------
