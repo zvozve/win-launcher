@@ -171,11 +171,18 @@ Item {
         anchors.fill: parent
         anchors.margins: 4
         radius: Theme.rLg
-        color: root.keySelected ? Theme.accentSoft
-                                : (area.containsMouse ? Theme.accentSoft : "transparent")
-        border.width: root.keySelected ? 2 : 1
-        border.color: root.keySelected ? Theme.focusRing
-                                       : (area.containsMouse ? Theme.focusRing : "transparent")
+        /*
+         * 鼠标 / 键盘 互斥，保证「同时只有一个高亮」：
+         *   keyboardActive（键盘模式）为真 -> hover 让位，只认键盘选中；
+         *   keyboardActive 为假（鼠标模式）-> 只认 hover。
+         * keySelected 本身也只在 keyboardActive 时成立（见 LauncherPanel 透传），
+         * 两者永不同时为真。
+         */
+        readonly property bool showKey:   root.keySelected
+        readonly property bool showHover: area.containsMouse && !root.keyboardActive
+        color: showKey ? Theme.accentSoft : (showHover ? Theme.accentSoft : "transparent")
+        border.width: showKey ? 2 : 1
+        border.color: showKey ? Theme.focusRing : (showHover ? Theme.focusRing : "transparent")
 
         Behavior on color {
             ColorAnimation { duration: Theme.durFast }

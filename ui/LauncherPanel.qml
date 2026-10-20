@@ -150,10 +150,12 @@ Item {
      * 方向键绝不跨区——跨区只能按 Tab / Shift+Tab。
      */
     function focusSearch() {
+        root.keyboardMode = false
         searchBar.focusInput()
     }
 
     function focusCategories() {
+        root.keyboardMode = false
         catBar.focusBar()
     }
 
@@ -525,8 +527,10 @@ Item {
                     height: parent.height
                     visible: !(modelData && modelData.isFolder)
                     app: modelData ? modelData.item : null
-                    // 键盘选中：只在网格真的拿到焦点时才亮，鼠标 hover 时不算
-                    keySelected: grid.activeFocus && isCurr
+                    // 键盘选中：只在键盘模式（keyboardMode）下才亮，鼠标 hover 时不算。
+                    // 用 keyboardMode 而非 grid.activeFocus —— Tab 跳出网格后 activeFocus
+                    // 可能残留，会导致旧选中项还亮着。
+                    keySelected: root.keyboardMode && isCurr
                     // 鼠标模式标志（透传 keyboardMode）+ 自己在网格中的下标
                     keyboardActive: root.keyboardMode
                     tileIndex: index
@@ -544,7 +548,7 @@ Item {
                     height: parent.height
                     visible: modelData && modelData.isFolder
                     folder: modelData
-                    keySelected: grid.activeFocus && isCurr
+                    keySelected: root.keyboardMode && isCurr
                     keyboardActive: root.keyboardMode
                     tileIndex: index
                     onTileEntered: (i) => { root.hoverIndex = i; root.keyboardMode = false }
@@ -696,11 +700,13 @@ Item {
                 delegate: Rectangle {
                     // 键盘选中项（横向列表用 ←→ 走）
                     readonly property bool keyCurrent: hitList.activeFocus && ListView.isCurrentItem
+                    // 与网格同理：键盘模式（列表有焦点）时 hover 让位，避免双高亮
+                    readonly property bool showHover: hitArea.containsMouse && !hitList.activeFocus
 
                     width: 108
                     height: 64
                     radius: Theme.rMd
-                    color: hitArea.containsMouse || keyCurrent ? Theme.stateHover : "transparent"
+                    color: keyCurrent || showHover ? Theme.stateHover : "transparent"
                     border.width: keyCurrent ? 1 : 0
                     border.color: Theme.focusRing
 
