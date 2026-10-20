@@ -14,6 +14,7 @@
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QSet>
+#include <QAbstractNativeEventFilter>
 #include <QSystemTrayIcon>
 #include <QTextStream>
 #include <QTimer>
@@ -78,6 +79,36 @@ QIcon makeAppIcon()
     p.end();
     return QIcon(pm);
 }
+
+/*
+ * 系统托盘兜底：explorer 重启、或通知区域晚就绪时，Windows 会广播
+ * RegisterWindowMessage("TaskbarCreated")。捕获该消息主动 show() 一次，
+ * 否则这类情况下托盘图标会消失且不再出现（表现为「时有时无」）。
+ */
+class TrayRecoveryFilter : public QAbstractNativeEventFilter {
+public:
+    explicit TrayRecoveryFilter(QSystemTrayIcon *tray)
+        : m_tray(tray)
+    {
+        m_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
+    }
+
+    bool nativeEventFilter(const QByteArray &eventType, void *message,
+                           qintptr *result) override
+    {
+        Q_UNUSED(result);
+        if (eventType == QByteArrayLiteral("windows_generic_MSG")) {
+            const MSG *msg = static_cast<const MSG *>(message);
+            if (msg && msg->message == m_taskbarCreated && m_tray)
+                m_tray->show();
+        }
+        return false;
+    }
+
+private:
+    UINT m_taskbarCreated = 0;
+    QSystemTrayIcon *m_tray = nullptr;
+};
 
 // ---- 诊断输出 ----------------------------------------------------------
 // 本程序是 WIN32 子系统（没有控制台），所以 --test-* 类诊断既尝试借用父进程
@@ -926,7 +957,15 @@ int main(int argc, char *argv[])
                      });
 
     tray.setContextMenu(&trayMenu);
-    tray.show();
+
+    /*
+     * 系统托盘（explorer 通知区域）可能比本程序晚就绪，导致启动早期 show() 静默失败；
+     * 延后到事件循环启动后再 show，并在 explorer 重启（广播 TaskbarCreated）时由
+     * TrayRecoveryFilter 主动重建，保证托盘图标不丢、不偶发消失。
+     */
+    QTimer::singleShot(0, &tray, [&tray] { tray.show(); });
+    TrayRecoveryFilter trayRecovery(&tray);
+    app.installNativeEventFilter(&trayRecovery);
 
     // ---- 单实例回调 -------------------------------------------------------
     QObject::connect(&server, &QLocalServer::newConnection, &controller, [&server, &controller] {
