@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QFileInfo>
 
 #include <algorithm>
 #include <string>
@@ -16,6 +17,7 @@ namespace {
 
 // Everything SDK 请求标志（Everything.h）
 constexpr unsigned int kRequestFullPathAndFileName = 0x00000004;
+constexpr unsigned int kRequestSize = 0x00000010;
 
 // 单条结果路径的缓冲（路径上限足够）
 constexpr unsigned int kPathBufferChars = 32768;
@@ -80,6 +82,11 @@ void EverythingSearch::probe()
         GetProcAddress(mod, "Everything_GetNumResults"));
     m_getResultFullPathNameW = reinterpret_cast<void (*)(unsigned int, wchar_t *, unsigned int)>(
         GetProcAddress(mod, "Everything_GetResultFullPathNameW"));
+    // 可选：取大小/判断目录。缺失时降级为「大小未知」，不影响搜索本身
+    m_getResultSize = reinterpret_cast<int (*)(unsigned int, void *)>(
+        GetProcAddress(mod, "Everything_GetResultSize"));
+    m_isFolderResult = reinterpret_cast<int (*)(unsigned int)>(
+        GetProcAddress(mod, "Everything_IsFolderResult"));
     m_cleanUp = reinterpret_cast<void (*)()>(GetProcAddress(mod, "Everything_CleanUp"));
 
     const bool complete = m_setSearchW && m_queryW && m_getNumResults && m_getResultFullPathNameW;
@@ -96,9 +103,10 @@ void EverythingSearch::probe()
     qInfo("EverythingSearch: 已加载 %s", qPrintable(m_loadedPath));
 }
 
-QStringList EverythingSearch::search(const QString &query, int limit, const QString &extFilter)
+QList<EverythingHit> EverythingSearch::search(const QString &query, int limit,
+                                             const QString &extFilter)
 {
-    QStringList result;
+    QList<EverythingHit> result;
     const QString needle = query.trimmed();
     if (!m_available || needle.isEmpty())
         return result;
@@ -115,7 +123,7 @@ QStringList EverythingSearch::search(const QString &query, int limit, const QStr
     if (m_setRegex)
         m_setRegex(FALSE);
     if (m_setRequestFlags)
-        m_setRequestFlags(kRequestFullPathAndFileName);
+        m_setRequestFlags(kRequestFullPathAndFileName | kRequestSize);
     if (m_setMax)
         m_setMax(static_cast<unsigned int>(limit));
 
@@ -126,12 +134,32 @@ QStringList EverythingSearch::search(const QString &query, int limit, const QStr
     const unsigned int capped = qMin<unsigned int>(count, static_cast<unsigned int>(limit));
 
     std::wstring buffer(kPathBufferChars, L'\0');
+    result.reserve(static_cast<int>(capped));
     for (unsigned int i = 0; i < capped; ++i) {
         std::fill(buffer.begin(), buffer.end(), L'\0');
         m_getResultFullPathNameW(i, buffer.data(), kPathBufferChars);
         const QString path = QString::fromWCharArray(buffer.c_str());
-        if (!path.isEmpty())
-            result.append(path);
+        if (path.isEmpty())
+            continue;
+
+        EverythingHit hit;
+        hit.fullPath = path;
+        /*
+         * QFileInfo 的 fileName / path / suffix 只做**字符串解析**，不 stat 磁盘。
+         * 这点很重要：索引里可能有离线卷，碰磁盘会把 GUI 卡死。
+         */
+        const QFileInfo fi(path);
+        hit.fileName = fi.fileName();
+        hit.dirPath = fi.path();
+        hit.extension = fi.suffix().toLower();
+        if (m_isFolderResult)
+            hit.isFolder = m_isFolderResult(i) != 0;
+        if (m_getResultSize && !hit.isFolder) {
+            LARGE_INTEGER li{};
+            if (m_getResultSize(i, &li))
+                hit.size = static_cast<qint64>(li.QuadPart);
+        }
+        result.append(hit);
     }
     return result;
 }

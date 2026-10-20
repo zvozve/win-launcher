@@ -394,7 +394,13 @@ AppItem *AppScanner::fromAnyPath(const QString &path, QObject *parent)
         data.workingDir = fi.absolutePath();
         data.sourcePath = fi.absoluteFilePath();
         data.category = AppCategory::classify(data.name, data.target);
-        data.iconPath = IconProvider::iconForPath(data.target);
+        /*
+         * 普通文件只走「按扩展名的关联图标」，**不**退回 iconForPath：
+         * 后者交给 SHGetFileInfo 真实路径查询，会加载该类型的第三方 shell 扩展
+         * （pdf 的 Adobe/福昕 handler 之类），全盘搜索命中一堆 pdf 时把 GUI 卡死。
+         * 取不到就留空，由 QML 画占位块 —— 宁可图标朴素，也不能卡界面。
+         */
+        data.iconPath = IconProvider::associatedIcon(fi.suffix());
         data.seed = fi.absoluteFilePath().toLower(); // 同一文件多轮搜索得到同一个 id
         data.removable = false;
         return toItem(data, parent);

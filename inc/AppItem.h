@@ -34,6 +34,13 @@ class AppItem : public QObject
     Q_PROPERTY(QString groupLabel  READ groupLabel                       NOTIFY groupChanged)
     Q_PROPERTY(bool    removable   READ removable   WRITE setRemovable   NOTIFY removableChanged)
     Q_PROPERTY(bool    isUwp       READ isUwp                            NOTIFY kindChanged)
+    /*
+     * 全盘搜索结果的文件大小（字节）。-1 = 未知 / 目录。
+     * 值来自 Everything 索引，**不**对文件做 stat —— 索引里可能有离线卷。
+     * sizeText 是给人看的形式（"1.2 MB"），QML 详情列表直接用。
+     */
+    Q_PROPERTY(qint64  sizeBytes   READ sizeBytes   WRITE setSizeBytes   NOTIFY sizeBytesChanged)
+    Q_PROPERTY(QString sizeText    READ sizeText                         NOTIFY sizeBytesChanged)
 
 public:
     // kind 取值（保持字符串，方便 JSON 持久化与 QML 直接判断）
@@ -59,6 +66,8 @@ public:
     QString groupLabel() const;
     bool removable() const { return m_removable; }
     bool isUwp() const { return m_kind == KindUwp; }
+    qint64 sizeBytes() const { return m_sizeBytes; }
+    QString sizeText() const;
 
     void setName(const QString &v);
     void setKind(const QString &v);
@@ -71,6 +80,7 @@ public:
     void setCategory(const QString &v);
     void setGroup(const QString &v);
     void setRemovable(bool v);
+    void setSizeBytes(qint64 v);
 
     // 稳定 ID：优先 target+AUMID，其次源文件路径，保证多次扫描结果一致
     void rebindId(const QString &seed);
@@ -91,6 +101,7 @@ signals:
     void categoryChanged();
     void groupChanged();
     void removableChanged();
+    void sizeBytesChanged();
 
 private:
     QString m_id;
@@ -105,4 +116,5 @@ private:
     QString m_category;
     QString m_group;
     bool m_removable = false;
+    qint64 m_sizeBytes = -1;
 };

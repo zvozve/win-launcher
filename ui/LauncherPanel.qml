@@ -152,6 +152,20 @@ Item {
         searchBar.focusInput()
     }
 
+    /*
+     * 从完整路径里取扩展名（不带点、小写）。全盘详情列表的「类型」列用。
+     * 必须在最后一个分隔符之后才认点 —— 否则 "D:\a.b\file" 会被当成扩展名 "b\file"。
+     */
+    function extOf(path) {
+        if (!path)
+            return ""
+        const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))
+        const dot = path.lastIndexOf(".")
+        if (dot < 0 || dot < slash)
+            return ""
+        return path.slice(dot + 1).toLowerCase()
+    }
+
     function focusCategories() {
         root.keyboardMode = false
         catBar.focusBar()
@@ -386,7 +400,17 @@ Item {
         Item {
             id: gridWrap
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            /*
+             * 有全盘结果时网格让位：列表是搜索的主视图，要占大头。
+             *   · 本地一条都没命中（搜「1.4 pdf」这种纯文件名）→ 网格收成 0，
+             *     列表直接顶到分类条下面；
+             *   · 本地也有命中（搜 chrome）→ 网格留一排，列表在下面。
+             * 没有全盘结果时网格照常铺满。
+             */
+            Layout.fillHeight: !everythingRow.visible
+            Layout.preferredHeight: everythingRow.visible
+                                    ? (Ctrl.gridItems.length > 0 ? 200 : 0)
+                                    : 0
             /*
              * 试过「只搜到全盘文件时把网格整块 visible: false」收掉空白 ——
              * 观感是错的：ColumnLayout 在没有 fillHeight 项时会把剩余高度
@@ -587,7 +611,7 @@ Item {
                 wrapMode: Text.WordWrap
                 color: Theme.textMid
                 font.pixelSize: Theme.fsLabel
-                text: Ctrl.scanning
+                text: (Ctrl.scanning && Ctrl.tileCount === 0)
                       ? qsTr("正在扫描已安装应用…")
                       : (Ctrl.query.length > 0
                          ? (Ctrl.searchResults.length > 0
@@ -677,32 +701,80 @@ Item {
         }
     }
 
-        // ---- Everything 全盘搜索结果 ----
+        /*
+         * ---- 全盘搜索结果：Everything 风格的详情列表 ----
+         *
+         * 四列：名称 / 路径 / 大小 / 扩展名。以前是横向小图标条，只能看到名字，
+         * 「文件名差不多、目录不同」的命中根本分不出来；大小和扩展名也全丢。
+         *
+         * 数据全部来自 Everything **索引**（Controller 不碰磁盘），所以这里
+         * modelData.sizeText 可能为空（目录 / 未索引）—— 那几列就留白，
+         * 不能显示成「0 B」误导人。
+         */
         ColumnLayout {
             id: everythingRow
             Layout.fillWidth: true
-            spacing: 4
+            Layout.fillHeight: true
+            spacing: 0
             visible: Ctrl.searchResults.length > 0
 
             Text {
-                text: qsTr("全盘搜索（Everything）· %1 个").arg(Ctrl.searchResults.length)
+                Layout.bottomMargin: 4
+                text: qsTr("全盘搜索 · %1 个文件").arg(Ctrl.searchResults.length)
                 color: Theme.textMid
                 font.pixelSize: Theme.fsSmall
             }
 
-            /*
-             * 全盘命中的多半是普通文件（pdf / xlsx / docx…），图标全是同一张
-             * 文件类型图标 —— 只给图标等于没给信息，所以这里必须带文件名。
-             * 名字一行、中间省略（扩展名留在尾巴上，比首省略有用），
-             * 鼠标停留再给完整路径。
-             */
+            // 表头：列宽必须和 delegate 用同一组数值，否则两行对不齐
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+                Layout.leftMargin: 6
+                Layout.rightMargin: 6
+                spacing: 10
+
+                Item { Layout.preferredWidth: 16 }
+                Text {
+                    Layout.preferredWidth: 200
+                    text: qsTr("名称")
+                    color: Theme.textLo
+                    font.pixelSize: Theme.fsTiny
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("路径")
+                    color: Theme.textLo
+                    font.pixelSize: Theme.fsTiny
+                }
+                Text {
+                    Layout.preferredWidth: 80
+                    text: qsTr("大小")
+                    color: Theme.textLo
+                    font.pixelSize: Theme.fsTiny
+                    horizontalAlignment: Text.AlignRight
+                }
+                Text {
+                    Layout.preferredWidth: 62
+                    text: qsTr("类型")
+                    color: Theme.textLo
+                    font.pixelSize: Theme.fsTiny
+                    horizontalAlignment: Text.AlignRight
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: Theme.divider
+            }
+
             ListView {
                 id: hitList
                 Layout.fillWidth: true
-                height: 64
-                orientation: ListView.Horizontal
-                spacing: 4
+                Layout.fillHeight: true
+                Layout.topMargin: 2
                 clip: true
+                spacing: 0
                 model: Ctrl.searchResults
 
                 // 同网格：默认不给焦点，按 Tab 时由 focusSearch 接管轮回
@@ -714,41 +786,72 @@ Item {
                     event.accepted = true
                 }
 
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                }
+
                 delegate: Rectangle {
-                    // 键盘选中项（横向列表用 ←→ 走）
+                    // 键盘选中项（竖向列表用 ↑↓ 走）
                     readonly property bool keyCurrent: hitList.activeFocus && ListView.isCurrentItem
                     // 与网格同理：键盘模式（列表有焦点）时 hover 让位，避免双高亮
                     readonly property bool showHover: hitArea.containsMouse && !hitList.activeFocus
 
-                    width: 108
-                    height: 64
-                    radius: Theme.rMd
+                    width: hitList.width
+                    height: 26
+                    radius: Theme.rSm
                     color: keyCurrent || showHover ? Theme.stateHover : "transparent"
                     border.width: keyCurrent ? 1 : 0
                     border.color: Theme.focusRing
 
-                    Image {
-                        id: hitIcon
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        y: 4
-                        width: 32
-                        height: 32
-                        source: modelData ? modelData.iconUrl : ""
-                        sourceSize: Qt.size(64, 64)
-                        fillMode: Image.PreserveAspectFit
-                        asynchronous: true
-                    }
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 6
+                        spacing: 10
 
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: hitIcon.bottom
-                        anchors.topMargin: 3
-                        width: parent.width - 8
-                        text: modelData ? modelData.name : ""
-                        color: Theme.textMid
-                        font.pixelSize: Theme.fsTiny
-                        horizontalAlignment: Text.AlignHCenter
-                        elide: Text.ElideMiddle
+                        Image {
+                            Layout.preferredWidth: 16
+                            Layout.preferredHeight: 16
+                            source: modelData ? modelData.iconUrl : ""
+                            sourceSize: Qt.size(32, 32)
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                        }
+
+                        Text {
+                            Layout.preferredWidth: 200
+                            text: modelData ? modelData.name : ""
+                            color: Theme.textHi
+                            font.pixelSize: Theme.fsSmall
+                            elide: Text.ElideMiddle
+                        }
+
+                        // 路径：中间省略，保留盘符和末级目录（两头都有用）
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData ? modelData.workingDir : ""
+                            color: Theme.textMid
+                            font.pixelSize: Theme.fsSmall
+                            elide: Text.ElideMiddle
+                        }
+
+                        Text {
+                            Layout.preferredWidth: 80
+                            text: modelData ? modelData.sizeText : ""
+                            color: Theme.textMid
+                            font.pixelSize: Theme.fsSmall
+                            horizontalAlignment: Text.AlignRight
+                            elide: Text.ElideLeft
+                        }
+
+                        Text {
+                            Layout.preferredWidth: 62
+                            text: modelData ? root.extOf(modelData.target) : ""
+                            color: Theme.textLo
+                            font.pixelSize: Theme.fsSmall
+                            horizontalAlignment: Text.AlignRight
+                            elide: Text.ElideRight
+                        }
                     }
 
                     MouseArea {
@@ -761,7 +864,7 @@ Item {
 
                     ToolTip.visible: hitArea.containsMouse
                     ToolTip.text: modelData ? modelData.target : ""
-                    ToolTip.delay: 500
+                    ToolTip.delay: 600
                 }
             }
         }
@@ -781,8 +884,13 @@ Item {
             }
 
             BusyIndicator {
-                visible: Ctrl.scanning
-                running: Ctrl.scanning
+                /*
+                 * 有缓存时启动就有内容（tileCount > 0），后台校验不该再转圈 ——
+                 * 用户要的是「打开即用」，不是「先看扫描动画」。
+                 * 只有真正没有内容可显示（首次运行）时才趴在状态栏上。
+                 */
+                visible: Ctrl.scanning && Ctrl.tileCount === 0
+                running: visible
                 implicitWidth: 14
                 implicitHeight: 14
             }
@@ -796,7 +904,7 @@ Item {
                  * 都在报同一个数字，看着像出了什么问题。
                  */
                 visible: text.length > 0
-                text: Ctrl.scanning
+                text: (Ctrl.scanning && Ctrl.tileCount === 0)
                       ? qsTr("扫描 %1 / %2").arg(Ctrl.scanProgress).arg(Ctrl.scanTotal)
                       : (Ctrl.query.length > 0 || AppConfig.appCategory !== "all"
                          ? qsTr("%1 / %2").arg(Ctrl.tileCount).arg(Ctrl.tileTotal)

@@ -142,6 +142,34 @@ void AppItem::setRemovable(bool v)
     emit removableChanged();
 }
 
+void AppItem::setSizeBytes(qint64 v)
+{
+    if (m_sizeBytes == v)
+        return;
+    m_sizeBytes = v;
+    emit sizeBytesChanged();
+}
+
+/*
+ * 人类可读的大小。全盘搜索的详情列表要它；-1（未知/目录）显示成空，
+ * 免得在「大小」列里塞个「0 B」误导人。
+ */
+QString AppItem::sizeText() const
+{
+    if (m_sizeBytes < 0)
+        return QString();
+    static const char *units[] = {"B", "KB", "MB", "GB", "TB"};
+    double v = static_cast<double>(m_sizeBytes);
+    int unit = 0;
+    while (v >= 1024.0 && unit < 4) {
+        v /= 1024.0;
+        ++unit;
+    }
+    // 字节数不带小数，其余保留一位（和资源管理器观感接近）
+    return unit == 0 ? QStringLiteral("%1 B").arg(static_cast<qint64>(v))
+                     : QStringLiteral("%1 %2").arg(QString::number(v, 'f', 1), QString::fromLatin1(units[unit]));
+}
+
 void AppItem::rebindId(const QString &seed)
 {
     const QByteArray hash = QCryptographicHash::hash(seed.toUtf8(), QCryptographicHash::Sha1).toHex();

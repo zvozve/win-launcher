@@ -249,12 +249,12 @@ int main(int argc, char *argv[])
                        .arg(everything.isAvailable() ? QStringLiteral("true") : QStringLiteral("false")));
             report(QStringLiteral("everything.loadedPath = %1").arg(everything.loadedPath()));
             if (!query.isEmpty()) {
-                const QStringList hits = everything.search(query, 20, QString());
-                report(QStringLiteral("query=\"%1\"  hits=%2")
-                           .arg(query)
-                           .arg(hits.size()));
-                for (const QString &h : hits)
-                    report(QStringLiteral("  ") + h);
+                const QList<EverythingHit> hits = everything.search(query, 20, QString());
+                report(QStringLiteral("query=\"%1\"  hits=%2").arg(query).arg(hits.size()));
+                for (const EverythingHit &h : hits)
+                    report(QStringLiteral("  %1  [%2]  %3 B")
+                               .arg(h.fullPath, h.extension)
+                               .arg(h.size));
             }
             report(QStringLiteral("report file: ") + diagnosticsPath());
             return 0;

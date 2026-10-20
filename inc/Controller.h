@@ -239,6 +239,16 @@ private:
     bool loadLayout();   // layout.json：手动条目 + 隐藏名单
     void saveLayout();
 
+    /*
+     * 扫描结果缓存（启动秒开）。
+     *   loadCachedApps()  启动时同步读入上次清单，面板一出来就有内容；
+     *   saveCachedApps()  finishScan 时落盘，供下次启动用。
+     * 后台扫描照常进行，finishScan 里比对：和当前显示一致就**不动界面**，
+     * 有差异才换数据重建 —— 见 finishScan 里那段「等价则跳过重建」。
+     */
+    void loadCachedApps();
+    void saveCachedApps(const QList<ScannedApp> &apps) const;
+
     Config *m_config = nullptr;
     EverythingSearch *m_everything = nullptr;
     LauncherWindow *m_window = nullptr;
@@ -266,5 +276,8 @@ private:
     QString m_status;
     QString m_error;
     bool m_scanning = false;
+    // 本轮启动是否已从缓存恢复清单：true 时扫描只是后台校验，
+    // 状态行/空态提示都不该再报「正在扫描 x / y」。
+    bool m_cacheLoaded = false;
     bool m_diskSearch = false;   // 本轮搜索是否走了全盘（见 diskSearch 属性）
 };

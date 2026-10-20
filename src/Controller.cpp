@@ -16,6 +16,8 @@
 #include <QScreen>
 #include <QSet>
 #include <QStandardPaths>
+#include <QSaveFile>
+#include <QDateTime>
 #include <QTimer>
 #include <QVariantMap>
 #include <QWindow>
@@ -57,6 +59,20 @@ QString layoutPath()
     return QDir(dir).filePath(QStringLiteral("layout.json"));
 }
 
+/*
+ * 上次扫描结果的缓存（启动秒开用）。
+ *
+ * 放在配置目录而不是 cache/icons：图标缓存会被「重建图标」整批清掉，
+ * 应用清单不该跟着消失。版本号变了就当没有缓存，重新扫一遍。
+ */
+QString appsCachePath()
+{
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    return QDir(dir).filePath(QStringLiteral("apps-cache.json"));
+}
+
+constexpr int kAppsCacheVersion = 1;
+
 } // namespace
 
 Controller::Controller(Config *config, EverythingSearch *everything, QObject *parent)
@@ -80,6 +96,12 @@ Controller::Controller(Config *config, EverythingSearch *everything, QObject *pa
     connect(m_config, &Config::groupThresholdChanged, this, &Controller::rebuildVisible);
 
     loadLayout();
+    /*
+     * 先把上次的扫描结果读进来再刷新界面：面板一出来就有完整网格和「共 N 个」，
+     * 不用干等扫描。真正的扫描稍后由 main 在后台触发（见 main.cpp 的 rescan），
+     * 扫完在 finishScan 里比对，没变化就不动界面。
+     */
+    loadCachedApps();
     rebuildVisible();
 
     setStatus(QStringLiteral("就绪"));
@@ -236,7 +258,17 @@ void Controller::rescan()
         return;
     }
 
-    setStatus(QStringLiteral("正在扫描 0 / %1…").arg(m_scanTasks.size()));
+    /*
+     * 有缓存时**不写**扫描进度状态行：用户已经能看到「共 152 个」，
+     * 再把它换成「正在扫描 0 / 311…」就是倒退。进度只走 scanProgress 属性
+     * （设置界面里的进度条会用到），状态行保持缓存给的数字。
+     */
+    if (!m_cacheLoaded) {
+        setStatus(QStringLiteral("正在扫描 0 / %1…").arg(m_scanTasks.size()));
+    } else {
+        wlTrace(QStringLiteral("rescan: 后台校验开始（%1 个任务，界面保持缓存内容）")
+                    .arg(m_scanTasks.size()));
+    }
     QTimer::singleShot(0, this, &Controller::processScanChunk);
 }
 
@@ -258,7 +290,10 @@ void Controller::processScanChunk()
         // 每 20 个（且至少隔一片）刷一次进度，避免刷爆信号
         if (m_scanIndex % 20 == 0 && lastReported != m_scanIndex) {
             lastReported = m_scanIndex;
-            setStatus(QStringLiteral("正在扫描 %1 / %2…").arg(m_scanIndex).arg(m_scanTasks.size()));
+            if (!m_cacheLoaded) // 有缓存时状态行留给「共 N 个」，别退回扫描计数
+                setStatus(QStringLiteral("正在扫描 %1 / %2…")
+                              .arg(m_scanIndex)
+                              .arg(m_scanTasks.size()));
             emit scanProgressChanged();
         }
     }
@@ -286,11 +321,65 @@ void Controller::finishScan()
         unique.append(app);
     }
 
-    qDeleteAll(m_all);
-    m_all.clear();
-    m_all.reserve(unique.size());
-    for (const ScannedApp &app : std::as_const(unique))
-        m_all.append(AppScanner::toItem(app, this));
+    /*
+     * 和**当前显示的内容**比对：一致就跳过重建，界面一动不动。
+     *
+     * 这是有缓存时的常态 —— 启动已用上次清单渲染好了（用户抱怨的「每次启动先
+     * 扫描、数字从 0 跳」就是这里该避免的），后台扫完如果发现没变化，还去
+     * qDeleteAll + 重建 138 个格子纯属自找：会丢滚动位置、闪烁、重新解一遍图标。
+     *
+     * 比对键用 **target**（不是 id）：AppItem::rebindId 把 seed 存成 SHA1，
+     * id() 是哈希值、和 ScannedApp.seed 永远不相等（踩过：比对恒 false，
+     * 每次启动都白重建一遍）。target 在两边都是原始路径，可以直接对上。
+     * 同时比 name / group / category —— 名字、归组、分类任一变了都要重建。
+     */
+    bool unchanged = false;
+    if (m_cacheLoaded && unique.size() == m_all.size()) {
+        QHash<QString, QString> shown;
+        shown.reserve(m_all.size());
+        for (AppItem *item : std::as_const(m_all)) {
+            const QString key = item->target().isEmpty() ? item->name() : item->target().toLower();
+            shown.insert(key,
+                         item->name() + QLatin1Char('|') + item->group() + QLatin1Char('|')
+                             + item->category());
+        }
+        unchanged = true;
+        for (const ScannedApp &a : std::as_const(unique)) {
+            const QString key = a.target.isEmpty() ? a.name : a.target.toLower();
+            const auto it = shown.constFind(key);
+            if (it == shown.constEnd()
+                || it.value()
+                       != a.name + QLatin1Char('|') + a.group + QLatin1Char('|') + a.category) {
+                unchanged = false;
+                break;
+            }
+        }
+        if (unchanged)
+            wlTrace(QStringLiteral("finishScan: %1 项与当前显示一致，跳过界面重建")
+                        .arg(unique.size()));
+    }
+
+    if (!unchanged) {
+        /*
+         * ★ 旧对象必须 deleteLater，不能 qDeleteAll 立即删。
+         *
+         * 此刻 m_grid 里的 GroupTile、m_apps 里的指针**都还指着这些对象**
+         * （rebuildVisible 要到后面才重建）。立即 delete 会让它们全变野指针，
+         * 一旦 QML 读 gridItems / 搜索里遍历 m_apps，qobject_cast 解引用就
+         * 段错误 —— 实测「搜 1.4 pdf」进程直接崩（exit 139），表现为用户说的
+         * 「卡死」。deleteLater 把销毁推回事件循环空闲，中间这些指针仍然有效。
+         */
+        const QList<AppItem *> old = m_all;
+        m_all.clear();
+        m_all.reserve(unique.size());
+        for (const ScannedApp &app : std::as_const(unique))
+            m_all.append(AppScanner::toItem(app, this));
+
+        for (AppItem *item : old) {
+            item->setParent(nullptr);
+            item->deleteLater();
+        }
+    }
 
     m_scanBuffer.clear();
     m_scanTasks.clear();
@@ -300,10 +389,16 @@ void Controller::finishScan()
     emit scanningChanged();
     emit scanProgressChanged();
 
-    rebuildVisible();
-    // 状态行的「共 N 个」由 rebuildVisible 统一给（数量按**格子**算，文件夹算一格），
-    // 这里再写一次 m_all.size() 会把折叠后的数字盖回「221 个应用」。
-    wlTrace(QStringLiteral("finishScan: %1 items").arg(m_all.size()));
+    // 落盘供下次启动秒开；扫描结果本身就是唯一真相，这里不比对旧缓存文件
+    saveCachedApps(unique);
+    m_cacheLoaded = true; // 之后的 rescan 都算「已有内容在显示」
+
+    if (!unchanged) {
+        rebuildVisible();
+        // 状态行的「共 N 个」由 rebuildVisible 统一给（数量按**格子**算，文件夹算一格），
+        // 这里再写一次 m_all.size() 会把折叠后的数字盖回「221 个应用」。
+        wlTrace(QStringLiteral("finishScan: %1 items（已重建界面）").arg(m_all.size()));
+    }
 }
 
 void Controller::clearCacheAndRescan()
@@ -530,26 +625,79 @@ void Controller::rebuildVisible()
          * 展开成 ext:…；显式扩展名按 Everything 原生 AND 子串匹配；引号保持字面量。
          */
         const QString expr = query.expression().isEmpty() ? needle : query.expression();
-        const QStringList hits = m_everything->search(expr, 96, QString());
-        const QSet<QString> allowed(query.extensions().begin(), query.extensions().end());
+        wlTrace(QStringLiteral("disk: query='%1'").arg(expr));
+        const QList<EverythingHit> hits = m_everything->search(expr, 96, QString());
+        wlTrace(QStringLiteral("disk: search -> %1 hits").arg(hits.size()));
+        /*
+         * ★ 必须先落到具名变量再取 begin/end。
+         *
+         * 写成 `QSet<QString> s(query.extensions().begin(), query.extensions().end())`
+         * 是未定义行为：extensions() 按值返回，两次调用得到**两个不同的临时容器**，
+         * 迭代器不属于同一容器。空列表时 begin/end 碰巧相等还看不出来，
+         * 一旦非空（「1.4 pdf」）就在构造 QSet 时段错误 —— 用户报的「卡死」。
+         */
+        const QStringList extList = query.extensions();
+        const QSet<QString> allowed(extList.begin(), extList.end());
+
+        // 已扫到的应用（按 target）不重复出现在「全盘」里
         QSet<QString> known;
         for (QObject *obj : std::as_const(m_apps)) {
             if (auto *item = qobject_cast<AppItem *>(obj))
-                known.insert(QFileInfo(item->target()).absoluteFilePath().toLower());
+                known.insert(item->target().toLower());
         }
-        for (const QString &hit : hits) {
-            if (!allowed.isEmpty() && !allowed.contains(QFileInfo(hit).suffix().toLower()))
+
+        int skipExt = 0;
+        int skipKnown = 0;
+        int skipFolder = 0;
+        for (const EverythingHit &hit : hits) {
+            if (hit.isFolder) {
+                ++skipFolder;
+                continue;
+            }
+            if (!allowed.isEmpty() && !allowed.contains(hit.extension.toLower())) {
+                ++skipExt;
                 continue; // 兜一道：只留当前类型（或用户写的扩展名）允许的
-            if (known.contains(QFileInfo(hit).absoluteFilePath().toLower()))
+            }
+            if (known.contains(hit.fullPath.toLower())) {
+                ++skipKnown;
                 continue;
-            AppItem *item = AppScanner::fromAnyPath(hit, this);
-            if (!item)
-                continue;
+            }
+
+            /*
+             * ★ 这里**绝不碰磁盘**：不 stat、不解析 .lnk、不提 jumbo 图标。
+             *
+             * 全盘命中可能上百条，而 Everything 索引里有离线/断开的卷 ——
+             * 对每条做一次 QFileInfo::exists() / SHGetFileInfo 就会卡在卷的超时上，
+             * 整个 GUI 冻住（「搜 1.4 pdf 卡死」的根因）。
+             *
+             * 展示要的东西全从索引取：大小 = Everything_SetRequestFlags(SIZE)，
+             * 扩展名/路径 = 纯字符串拆分，图标 = 按扩展名的关联图标（只查注册表）。
+             */
+            auto *item = new AppItem(this);
+            item->setName(hit.fileName);
+            item->setKind(AppItem::KindManual);
+            item->setTarget(hit.fullPath);
+            item->setWorkingDir(hit.dirPath);
+            item->setSourcePath(hit.fullPath);
+            item->setCategory(AppCategory::classify(hit.fileName, hit.fullPath));
+            wlTrace(QStringLiteral("disk: hit '%1' ext=%2 size=%3")
+                        .arg(hit.fileName, hit.extension)
+                        .arg(hit.size));
+            item->setIconPath(IconProvider::associatedIcon(hit.extension));
+            wlTrace(QStringLiteral("disk: hit icon ok"));
+            item->setSizeBytes(hit.size);
             item->setRemovable(false);
+            item->rebindId(hit.fullPath.toLower());
             extra.append(item);
             if (extra.size() >= 48)
                 break;
         }
+        wlTrace(QStringLiteral("diskHits: hits=%1 extra=%2 skipExt=%3 skipKnown=%4 skipFolder=%5")
+                    .arg(hits.size())
+                    .arg(extra.size())
+                    .arg(skipExt)
+                    .arg(skipKnown)
+                    .arg(skipFolder));
     }
 
     // 释放上一轮生成的 Everything 临时条目
@@ -1166,6 +1314,94 @@ void Controller::saveLayout()
         return;
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     f.close();
+}
+
+// ---- 扫描结果缓存（启动秒开）----------------------------------------------
+
+void Controller::loadCachedApps()
+{
+    QFile f(appsCachePath());
+    if (!f.exists() || !f.open(QIODevice::ReadOnly))
+        return;
+
+    const QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
+    f.close();
+
+    // 版本不符就当没有缓存（字段可能变了，宁可贵一次全扫）
+    if (root.value(QStringLiteral("version")).toInt() != kAppsCacheVersion)
+        return;
+
+    const QJsonArray arr = root.value(QStringLiteral("apps")).toArray();
+    if (arr.isEmpty())
+        return;
+
+    QList<ScannedApp> apps;
+    apps.reserve(arr.size());
+    for (const QJsonValue &v : arr) {
+        const QJsonObject o = v.toObject();
+        ScannedApp a;
+        a.name = o.value(QStringLiteral("name")).toString();
+        a.kind = o.value(QStringLiteral("kind")).toString();
+        a.target = o.value(QStringLiteral("target")).toString();
+        a.arguments = o.value(QStringLiteral("args")).toString();
+        a.workingDir = o.value(QStringLiteral("workdir")).toString();
+        a.sourcePath = o.value(QStringLiteral("source")).toString();
+        a.iconPath = o.value(QStringLiteral("icon")).toString();
+        a.category = o.value(QStringLiteral("category")).toString();
+        a.group = o.value(QStringLiteral("group")).toString();
+        a.seed = o.value(QStringLiteral("seed")).toString();
+        a.removable = o.value(QStringLiteral("removable")).toBool();
+        if (!a.name.isEmpty())
+            apps.append(a);
+    }
+    if (apps.isEmpty())
+        return;
+
+    m_all.reserve(m_all.size() + apps.size());
+    for (const ScannedApp &a : std::as_const(apps))
+        m_all.append(AppScanner::toItem(a, this));
+
+    m_cacheLoaded = true;
+    wlTrace(QStringLiteral("cache: 载入 %1 项（启动即渲染，扫描转后台校验）").arg(m_all.size()));
+}
+
+void Controller::saveCachedApps(const QList<ScannedApp> &apps) const
+{
+    QJsonArray arr;
+    for (const ScannedApp &a : std::as_const(apps)) {
+        QJsonObject o;
+        o.insert(QStringLiteral("name"), a.name);
+        o.insert(QStringLiteral("kind"), a.kind);
+        o.insert(QStringLiteral("target"), a.target);
+        o.insert(QStringLiteral("args"), a.arguments);
+        o.insert(QStringLiteral("workdir"), a.workingDir);
+        o.insert(QStringLiteral("source"), a.sourcePath);
+        o.insert(QStringLiteral("icon"), a.iconPath);
+        o.insert(QStringLiteral("category"), a.category);
+        o.insert(QStringLiteral("group"), a.group);
+        o.insert(QStringLiteral("seed"), a.seed);
+        o.insert(QStringLiteral("removable"), a.removable);
+        arr.append(o);
+    }
+
+    QJsonObject root;
+    root.insert(QStringLiteral("version"), kAppsCacheVersion);
+    root.insert(QStringLiteral("savedAt"),
+                QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    root.insert(QStringLiteral("apps"), arr);
+
+    const QString path = appsCachePath();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+
+    // QSaveFile：写临时文件再原子替换，进程被杀不会留下半个坏 JSON
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) {
+        wlTrace(QStringLiteral("cache: 写入失败 %1").arg(path));
+        return;
+    }
+    f.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
+    if (!f.commit())
+        wlTrace(QStringLiteral("cache: commit 失败 %1").arg(path));
 }
 
 // ---- 杂项 -----------------------------------------------------------------

@@ -290,6 +290,64 @@ QString IconProvider::iconForPath(const QString &path)
     return outPath;
 }
 
+QString IconProvider::associatedIcon(const QString &ext)
+{
+    QString e = ext.trimmed().toLower();
+    if (e.startsWith(QLatin1Char('.')))
+        e.remove(0, 1);
+    if (e.isEmpty())
+        return QString();
+
+    const QString dir = cacheDir();
+    if (dir.isEmpty())
+        return QString();
+    QDir().mkpath(dir);
+
+    // 同一个扩展名全盘命中会复用同一张图（8 个 pdf 只提取一次）
+    const QString outPath = QDir(dir).filePath(QStringLiteral("assoc_") + e + QStringLiteral(".png"));
+    if (QFile::exists(outPath))
+        return outPath;
+
+    /*
+     * SHGFI_USEFILEATTRIBUTES：把路径当成「不存在但类型已知的文件」，shell 只查
+     * 注册表里的关联图标，不打开文件、不加载该类型的第三方扩展 handler。
+     * 不带这个标志时 SHGetFileInfo 会真的走扩展（pdf 尤其慢，实测能把 GUI 卡死）。
+     */
+    const QString fake = QStringLiteral("x.") + e;
+    SHFILEINFOW sfi{};
+    const std::wstring native = QDir::toNativeSeparators(fake).toStdWString();
+    const DWORD flags = SHGFI_SYSICONINDEX | SHGFI_ICON | SHGFI_USEFILEATTRIBUTES;
+    if (!SHGetFileInfoW(native.c_str(), FILE_ATTRIBUTE_NORMAL, &sfi, sizeof(sfi), flags))
+        return QString();
+
+    HICON icon = nullptr;
+    IImageList *imageList = nullptr;
+    if (SUCCEEDED(SHGetImageList(SHIL_JUMBO, IID_IImageList, reinterpret_cast<void **>(&imageList)))
+        && imageList) {
+        const HRESULT hr = imageList->GetIcon(sfi.iIcon, ILD_TRANSPARENT, &icon);
+        imageList->Release();
+        if (FAILED(hr))
+            icon = nullptr;
+    }
+    if (!icon && sfi.hIcon)
+        icon = CopyIcon(sfi.hIcon);
+    if (sfi.hIcon)
+        DestroyIcon(sfi.hIcon);
+    if (!icon)
+        return QString();
+
+    QImage img = hiconToImage(icon, kJumboSize);
+    DestroyIcon(icon);
+    if (img.isNull())
+        return QString();
+
+    img = normalizeIcon(img);
+    if (img.isNull() || !img.save(outPath, "PNG"))
+        return QString();
+
+    return outPath;
+}
+
 void IconProvider::clearCache()
 {
     QDir dir(cacheDir());
