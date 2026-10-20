@@ -373,7 +373,12 @@ void Controller::rebuildVisible()
             continue;
         if (categoryFiltered && item->category() != appCat)
             continue;
-        if (!hasText)
+        /*
+         * 空查询（浏览模式）→ 全部显示，这是启动后的默认面貌。
+         * 有输入但只含类型词/扩展名（如只输「图片」）→ 不回退本地网格：
+         * 那种查询要的结果在全盘，回退会把 221 个应用全塞进网格。
+         */
+        if (!hasText && !m_query.trimmed().isEmpty())
             continue;
         bool hit = true;
         for (const QString &kw : kws) {
