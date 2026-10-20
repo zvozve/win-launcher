@@ -56,7 +56,6 @@ void Config::load()
     m_followSystemTheme = o.value(QStringLiteral("followSystemTheme")).toBool(true);
     m_darkMode = o.value(QStringLiteral("darkMode")).toBool(false);
     m_gridColumns = o.value(QStringLiteral("gridColumns")).toInt(7);
-    m_searchCategory = o.value(QStringLiteral("searchCategory")).toString(QStringLiteral("app"));
     m_appCategory = o.value(QStringLiteral("appCategory")).toString(QStringLiteral("all"));
     m_groupThreshold = o.value(QStringLiteral("groupThreshold")).toInt(2);
 
@@ -88,7 +87,6 @@ QJsonObject Config::toJson() const
     o.insert(QStringLiteral("followSystemTheme"), m_followSystemTheme);
     o.insert(QStringLiteral("darkMode"), m_darkMode);
     o.insert(QStringLiteral("gridColumns"), m_gridColumns);
-    o.insert(QStringLiteral("searchCategory"), m_searchCategory);
     o.insert(QStringLiteral("appCategory"), m_appCategory);
     o.insert(QStringLiteral("groupThreshold"), m_groupThreshold);
     return o;
@@ -203,15 +201,6 @@ void Config::setFollowSystemTheme(bool v)
     save();
 }
 
-void Config::setSearchCategory(const QString &v)
-{
-    if (m_searchCategory == v)
-        return;
-    m_searchCategory = v;
-    emit searchCategoryChanged();
-    save();
-}
-
 QStringList Config::categoryKeys()
 {
     return {QStringLiteral("app"),     QStringLiteral("doc"),  QStringLiteral("image"),
@@ -252,6 +241,30 @@ QString Config::categoryExtensions(const QString &key)
         {QStringLiteral("all"), QString()},
     };
     return table.value(key);
+}
+
+QString Config::expandTypeToken(const QString &token)
+{
+    const QString t = token.trimmed().toLower();
+    if (t.isEmpty())
+        return QString();
+
+    const QStringList keys = categoryKeys();
+    const QStringList labels = categoryLabels();
+    QString key;
+    const int ki = keys.indexOf(t);
+    if (ki >= 0)
+        key = keys.at(ki);
+    else {
+        const int li = labels.indexOf(t);
+        if (li >= 0)
+            key = keys.at(li);
+    }
+    if (key.isEmpty())
+        return QString();          // 不是类型词
+    if (key == QStringLiteral("all"))
+        return QStringLiteral("*"); // 「全部 / 所有类型」：不限制扩展名
+    return categoryExtensions(key);
 }
 
 void Config::setAppCategory(const QString &v)

@@ -95,6 +95,24 @@ SearchQuery SearchQuery::parse(const QString &text)
             continue;
         }
 
+        // 友好文件类型词（图片/视频/文档…）→ 展开成 ext: 列表交给 Everything。
+        // 「全部 / 所有类型」返回 "*"（不限制扩展名），这个词本身不参与匹配。
+        const QString typeExts = Config::expandTypeToken(word);
+        if (!typeExts.isEmpty()) {
+            if (typeExts != QStringLiteral("*")) {
+                exprs.append(QStringLiteral("ext:") + typeExts);
+                const QStringList parts =
+                    typeExts.split(QLatin1Char(';'), Qt::SkipEmptyParts);
+                for (const QString &e : parts) {
+                    if (!seenExt.contains(e)) {
+                        seenExt.insert(e);
+                        q.m_extensions.append(e);
+                    }
+                }
+            }
+            continue; // 类型词不进 keywords，也不当裸扩展名
+        }
+
         const QString bare = bareExtension(word);
         // 只有"写了前缀"或"本身在扩展名表里"才算扩展名 token
         const bool looksLikeExt = (bare != word) || knownExtSet().contains(bare);

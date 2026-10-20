@@ -5,12 +5,11 @@ import WinLauncher.Core
 
 /*
  * 搜索栏（左 → 右）：
- *   搜索类型选择器 | 放大镜 | 输入框 | 清空
+ *   放大镜 | 输入框 | 清空
  *
- * 类型选择器改的是 AppConfig.searchCategory，Controller 会同时用它做
- * 本地扩展名过滤和 Everything 的 ext: 过滤。**搜索源没有开关**：
- *   应用档 → 只查本地；其它档 → 自动查全盘；词里写了扩展名 → 也查全盘。
- * 细节见 Controller::rebuildVisible 第 5 步。
+ * 输入即交给 Everything 全盘搜索（搜索类型选择器已移除）。查询语法见 SearchQuery：
+ *   「报告 pdf」→ 文件名 + 扩展名；「报告 图片」→ 文件名 + 类型词（图片展开成
+ *   全部图片扩展名）。细节见 Controller::rebuildVisible 第 5 步。
  *
  * 输入框支持 Everything 的原生写法：「报告 xlsx」「"季度 报告" pdf」
  * 「ext:pdf;doc」，多个词是 AND 关系（见 SearchQuery）。
@@ -82,20 +81,6 @@ Item {
             anchors.leftMargin: 6
             anchors.rightMargin: 8
             spacing: 6
-
-            // ---- 搜索类型 ----
-            CategorySelector {
-                id: category
-                Layout.preferredWidth: 78
-                Layout.preferredHeight: 26
-            }
-
-            // 分隔线
-            Rectangle {
-                Layout.preferredWidth: 1
-                Layout.preferredHeight: 18
-                color: Theme.border
-            }
 
             // ---- 放大镜（画出来，不依赖字体符号）----
             Item {

@@ -248,12 +248,10 @@ int main(int argc, char *argv[])
             report(QStringLiteral("everything.available  = %1")
                        .arg(everything.isAvailable() ? QStringLiteral("true") : QStringLiteral("false")));
             report(QStringLiteral("everything.loadedPath = %1").arg(everything.loadedPath()));
-            report(QStringLiteral("searchCategory       = %1").arg(config.searchCategory()));
             if (!query.isEmpty()) {
-                const QStringList hits =
-                    everything.search(query, 20, Config::categoryExtensions(config.searchCategory()));
-                report(QStringLiteral("query=\"%1\"  filter=\"%2\"  hits=%3")
-                           .arg(query, Config::categoryExtensions(config.searchCategory()))
+                const QStringList hits = everything.search(query, 20, QString());
+                report(QStringLiteral("query=\"%1\"  hits=%2")
+                           .arg(query)
                            .arg(hits.size()));
                 for (const QString &h : hits)
                     report(QStringLiteral("  ") + h);

@@ -22,11 +22,8 @@ class Config : public QObject
     Q_PROPERTY(bool followSystemTheme READ followSystemTheme WRITE setFollowSystemTheme
                    NOTIFY followSystemThemeChanged)
     Q_PROPERTY(int gridColumns READ gridColumns WRITE setGridColumns NOTIFY gridColumnsChanged)
-    Q_PROPERTY(QString searchCategory READ searchCategory WRITE setSearchCategory
-                   NOTIFY searchCategoryChanged)
-    // 启动台顶部的应用分类（dev / media / office / internet / utility / other / all）。
-    // 和上面的 searchCategory 不是一回事：那个是「搜索类型」（应用/文档/图片…），
-    // 这个是「应用的类别」，值域见 AppCategory::keys()。
+    // 启动台顶部的应用分类（dev / media / office / internet / utility / other / all），
+    // 只用于空查询时浏览已装应用，不进入搜索逻辑。
     Q_PROPERTY(QString appCategory READ appCategory WRITE setAppCategory
                    NOTIFY appCategoryChanged)
     /*
@@ -50,7 +47,6 @@ public:
     bool darkMode() const { return m_darkMode; }
     bool followSystemTheme() const { return m_followSystemTheme; }
     int gridColumns() const { return m_gridColumns; }
-    QString searchCategory() const { return m_searchCategory; }
     QString appCategory() const { return m_appCategory; }
     int groupThreshold() const { return m_groupThreshold; }
     QString configPath() const;
@@ -62,17 +58,19 @@ public:
     void setDarkMode(bool v);
     void setFollowSystemTheme(bool v);
     void setGridColumns(int v);
-    void setSearchCategory(const QString &v);
     void setAppCategory(const QString &v);
     void setGroupThreshold(int v);
 
-    // ---- 搜索类型（本地过滤 + Everything 的 ext: 过滤共用同一张表）----
+    // ---- 文件类型 → 扩展名映射（搜索时把「图片」等类型词展开成 ext:…）----
     // key: app / doc / image / video / audio / archive / all
     static QStringList categoryKeys();
     static QStringList categoryLabels();
     static QString categoryLabel(const QString &key);
     // 分号分隔的扩展名；返回空串表示不按类型过滤（all）
     static QString categoryExtensions(const QString &key);
+    // 友好类型词（中文标签或英文 key，如「图片」/image）展开成扩展名列表（分号分隔）；
+    // 返回 "*" 表示「全部 / 所有类型」（不限制扩展名）；返回空串表示不是类型词。
+    static QString expandTypeToken(const QString &token);
 
     // 读注册表判断系统是否深色（AppsUseLightTheme == 0）
     static bool systemUsesDarkMode();
@@ -90,7 +88,6 @@ signals:
     void darkModeChanged();
     void followSystemThemeChanged();
     void gridColumnsChanged();
-    void searchCategoryChanged();
     void appCategoryChanged();
     void groupThresholdChanged();
 
@@ -104,7 +101,6 @@ private:
     bool m_darkMode = false;
     bool m_followSystemTheme = true;
     int m_gridColumns = 7;
-    QString m_searchCategory = QStringLiteral("app");
     QString m_appCategory = QStringLiteral("all");
     int m_groupThreshold = 2;
 };

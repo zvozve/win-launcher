@@ -72,13 +72,10 @@ Controller::Controller(Config *config, EverythingSearch *everything, QObject *pa
     /*
      * 顶部分类标签点一下就改 AppConfig.appCategory —— 这是**运行时的界面状态**，
      * 不是「下次启动才生效」的配置，所以必须立刻重算过滤结果。
-     *
      * 这个连接放在构造函数里（在 attachWindow 之前），就是为了防止「先点分类、
-     * 后接信号」的窗口期。同理，searchCategory 换了也要重算：它同时决定本地
-     * 过滤的类型白名单和 Everything 的 ext: 参数。
+     * 后接信号」的窗口期。
      */
     connect(m_config, &Config::appCategoryChanged, this, &Controller::rebuildVisible);
-    connect(m_config, &Config::searchCategoryChanged, this, &Controller::rebuildVisible);
     // 归组阈值改了要立刻重新折叠（设置窗口里是个数字选择）
     connect(m_config, &Config::groupThresholdChanged, this, &Controller::rebuildVisible);
 
@@ -351,33 +348,15 @@ void Controller::rebuildVisible()
     // 3) 顶部分类标签的数量（跟着上面的列表走）
     rebuildCategories();
 
-    // 4) 过滤：应用分类 -> 搜索类型 -> 关键词
-    //    注意两个 category 不是一回事：
-    //      m_config->appCategory()    应用类别（开发/影音/办公…）
-    //      m_config->searchCategory() 搜索类型（应用/文档/图片…），它决定扩展名白名单
+    // 4) 过滤：应用分类（仅空查询浏览用）-> 关键词
+    //     搜索类型选择器已移除 —— 输入即走 Everything，文件类型由查询里的类型词决定。
     const QString appCat = m_config->appCategory();
     const bool categoryFiltered = !appCat.isEmpty() && appCat != QLatin1String("all");
 
-    const QString searchCat = m_config->searchCategory();
     const SearchQuery query = SearchQuery::parse(m_query);
     const QString needle = query.text();
-
-    /*
-     * 扩展名白名单有两个来源，用户写了扩展名时以用户为准：
-     *   1. 搜索栏的类型选择器（应用/文档/图片…）→ Config::categoryExtensions
-     *   2. 搜索词里自带的扩展名（"报告 xlsx" 里的 xlsx）→ SearchQuery::extensions
-     * 后者覆盖前者。不覆盖的话，选着「应用」却敲 xlsx 会被 exe;lnk 白名单挡死，
-     * 结果永远是 0 —— 这正是「原生搜索模式」要避免的。
-     */
-    const QStringList typeExts =
-        query.hasExtensionToken()
-            ? query.extensions()
-            : Config::categoryExtensions(searchCat).split(QLatin1Char(';'), Qt::SkipEmptyParts);
-    const QSet<QString> allowed(typeExts.begin(), typeExts.end());
-    // "app" 这一档不加扩展名限制（扫进来的本来就是程序，手动条目也想留着）；
-    // 但用户显式写了扩展名时照常按它过滤。
-    const bool typeFiltered =
-        !allowed.isEmpty() && (query.hasExtensionToken() || searchCat != QLatin1String("app"));
+    // 是否带了文件名关键词：仅类型词/扩展名（如只输「图片」）时不回退本地应用网格
+    const bool hasText = !query.keywords().isEmpty();
 
     /*
      * 关键词匹配是 AND 语义：`报告 xlsx` 要求两个词都命中。
@@ -394,7 +373,7 @@ void Controller::rebuildVisible()
             continue;
         if (categoryFiltered && item->category() != appCat)
             continue;
-        if (typeFiltered && !allowed.contains(QFileInfo(item->target()).suffix().toLower()))
+        if (!hasText)
             continue;
         bool hit = true;
         for (const QString &kw : kws) {
@@ -528,28 +507,26 @@ void Controller::rebuildVisible()
     /*
      * 5) Everything 全盘结果
      *
-     * 搜索源不再有开关，按搜索类型自动推导：
-     *   应用档 → 只在本地（扫进来的本来就是程序，全盘搜 exe 意义不大）；
-     *   其它档（文档/图片/视频/音乐/压缩包/全部）→ 走全盘；
-     *   任何档只要用户自己写了扩展名（"报告 xlsx"）→ 走全盘。
-     * Everything64.dll 缺失时 wantDisk 自然为 false，退回纯本地过滤。
+     * 输入即走全盘（搜索类型选择器已移除）：词非空且 Everything 可用就查。
+     * 查询串直接交给 Everything —— 类型词已在 SearchQuery 展开成 ext:…，
+     * 显式扩展名按 Everything 原生 AND 子串匹配。
+     * Everything64.dll 缺失时 wantDisk 为 false，退回上面 matched 的纯本地过滤。
      */
     const QList<QObject *> previous = m_searchResults;
     QList<QObject *> extra;
-    const bool wantDisk = !needle.isEmpty() && m_everything && m_everything->isAvailable()
-                          && (searchCat != QLatin1String("app") || query.hasExtensionToken());
+    // 输入即走 Everything 全盘（搜索类型选择器已移除）；Everything 不可用时
+    // 退回纯本地应用过滤（上面 matched 已在做，仅按文件名关键词匹配）。
+    const bool wantDisk = !needle.isEmpty() && m_everything && m_everything->isAvailable();
     m_diskSearch = wantDisk;
 
     if (wantDisk) {
         /*
-         * 用户写了扩展名时，查询串原样交给 Everything（它自己认 ext:、引号、
-         * 多词的 AND 语义），不再追加类型白名单；否则才用类型选择器的白名单。
+         * 查询串直接交给 Everything：类型词（图片/视频…）已在 SearchQuery 里
+         * 展开成 ext:…；显式扩展名按 Everything 原生 AND 子串匹配；引号保持字面量。
          */
         const QString expr = query.expression().isEmpty() ? needle : query.expression();
-        const QStringList hits = query.hasExtensionToken()
-                                     ? m_everything->search(expr, 96, QString())
-                                     : m_everything->search(expr, 96,
-                                                            Config::categoryExtensions(searchCat));
+        const QStringList hits = m_everything->search(expr, 96, QString());
+        const QSet<QString> allowed(query.extensions().begin(), query.extensions().end());
         QSet<QString> known;
         for (QObject *obj : std::as_const(m_apps)) {
             if (auto *item = qobject_cast<AppItem *>(obj))
@@ -596,12 +573,10 @@ void Controller::rebuildVisible()
      * 「原生搜索」这类语法不好靠肉眼判断对不对，--trace 里留一份。
      */
     if (!needle.isEmpty()) {
-        wlTrace(QStringLiteral("search: '%1' kw=[%2] ext=[%3] cat=%4 disk=%5 "
-                               "localHits=%6 diskHits=%7")
+        wlTrace(QStringLiteral("search: '%1' kw=[%2] ext=[%3] disk=%4 localHits=%5 diskHits=%6")
                     .arg(needle)
                     .arg(query.keywords().join(QLatin1Char(',')))
                     .arg(query.extensions().join(QLatin1Char(',')))
-                    .arg(searchCat)
                     .arg(wantDisk ? 1 : 0)
                     .arg(shownTiles)
                     .arg(extra.size()));

@@ -9,7 +9,6 @@
         <file alias="qml/Theme.qml">../ui/Theme.qml</file>
         <file alias="qml/AppTile.qml">../ui/AppTile.qml</file>
         <file alias="qml/CategoryBar.qml">../ui/CategoryBar.qml</file>
-        <file alias="qml/CategorySelector.qml">../ui/CategorySelector.qml</file>
         <file alias="qml/EditWindow.qml">../ui/EditWindow.qml</file>
         <file alias="qml/FolderTile.qml">../ui/FolderTile.qml</file>
         <file alias="qml/GlassPanel.qml">../ui/GlassPanel.qml</file>

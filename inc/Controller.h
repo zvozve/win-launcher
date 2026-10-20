@@ -75,8 +75,6 @@ class Controller : public QObject
     Q_PROPERTY(QString errorText READ errorText NOTIFY errorTextChanged)
     Q_PROPERTY(Config *config READ config CONSTANT)
     Q_PROPERTY(EverythingSearch *everything READ everything CONSTANT)
-    Q_PROPERTY(QStringList searchCategoryLabels READ searchCategoryLabels CONSTANT)
-    Q_PROPERTY(QStringList searchCategoryKeys READ searchCategoryKeys CONSTANT)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
     Q_PROPERTY(bool autoStartLaunch READ autoStartLaunch CONSTANT)
     // 面板背景图的版本号：每抓一次新背景 +1，QML 用 "image://wlbg/panel?<token>"
@@ -184,8 +182,6 @@ public:
     QString errorText() const { return m_error; }
     Config *config() const { return m_config; }
     EverythingSearch *everything() const { return m_everything; }
-    QStringList searchCategoryLabels() const { return Config::categoryLabels(); }
-    QStringList searchCategoryKeys() const { return Config::categoryKeys(); }
     static QString appVersion();
     bool autoStartLaunch() const;
 

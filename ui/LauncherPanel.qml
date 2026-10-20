@@ -136,9 +136,7 @@ Item {
         event.accepted = true
     }
 
-    readonly property int categoryIndex: Math.max(0, Ctrl.searchCategoryKeys.indexOf(
-                                                      AppConfig.searchCategory))
-    readonly property string categoryLabel: Ctrl.searchCategoryLabels[categoryIndex]
+    // 搜索类型选择器已移除：统计文案不再带分类标签
 
     /*
      * ---- 键盘导航（不想为了启动一个搜到的应用去摸鼠标）----
@@ -596,10 +594,10 @@ Item {
                             ? ""
                             : (Ctrl.diskSearch
                                ? qsTr("全盘没有找到「%1」").arg(Ctrl.query)
-                               : qsTr("没有匹配「%1」的%2").arg(Ctrl.query).arg(root.categoryLabel)))
+                               : qsTr("没有匹配「%1」").arg(Ctrl.query)))
                          : (Ctrl.diskSearch
-                            ? qsTr("输入关键词后从全盘搜索%1").arg(root.categoryLabel)
-                            : qsTr("没有可显示的%1").arg(root.categoryLabel)))
+                            ? qsTr("输入关键词后从全盘搜索")
+                            : qsTr("没有可显示的内容"))
                 visible: Ctrl.gridItems.length === 0 && text.length > 0
             }
 
